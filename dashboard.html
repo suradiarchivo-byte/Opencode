@@ -63,6 +63,18 @@
   <div class="cards" id="cards"></div>
 
   <div class="charts">
+    <div class="toolbar" style="grid-column:1/-1">
+      <span class="muted">Rango:</span>
+      <button class="seg idxrango active" data-rango="todo">Todo</button>
+      <button class="seg idxrango" data-rango="ytd">YTD</button>
+      <button class="seg idxrango" data-rango="3m">3M</button>
+      <button class="seg idxrango" data-rango="6m">6M</button>
+      <button class="seg idxrango" data-rango="1a">1A</button>
+      <span class="muted">Desde</span>
+      <input type="date" id="idxDesde">
+      <span class="muted">Hasta</span>
+      <input type="date" id="idxHasta">
+    </div>
     <div class="panel">
       <h2>Índice General
         <span style="float:right">
@@ -130,7 +142,7 @@ const fmt = n => n == null ? '-' : Number(n).toLocaleString('en-US', {maximumFra
 const pct = n => n == null ? '-' : (n>0?'+':'') + Number(n).toFixed(2) + '%';
 const cls = n => n == null ? 'flat' : (n>0?'pos':(n<0?'neg':'flat'));
 let chartIG=null, chartFI=null, chartTicker=null, series=[], dias=[], fechas=[];
-let preciosCache=null, moneda='bs', simboloActual=null, rango='ytd', idxMoneda='bs';
+let preciosCache=null, moneda='bs', simboloActual=null, rango='ytd', idxMoneda='bs', idxRango='todo';
 
 function isoF(d) {
   return String(d.getFullYear())+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
@@ -172,10 +184,13 @@ function renderCards(sum) {
 }
 
 function renderCharts() {
-  const labels = series.map(r => r.fecha);
-  const ig = series.map(r => r.general ? (idxMoneda==='bs' ? Number(r.general) : Number(r.general_usd)) : null);
-  const fi = series.map(r => r.financiero ? (idxMoneda==='bs' ? Number(r.financiero) : Number(r.financiero_usd)) : null);
-  const ii = series.map(r => r.industrial ? (idxMoneda==='bs' ? Number(r.industrial) : Number(r.industrial_usd)) : null);
+  const dsel = document.getElementById('idxDesde').value.replace(/-/g,'');
+  const hsel = document.getElementById('idxHasta').value.replace(/-/g,'');
+  const s = series.filter(r => (!dsel || r.fecha >= dsel) && (!hsel || r.fecha <= hsel));
+  const labels = s.map(r => r.fecha);
+  const ig = s.map(r => r.general ? (idxMoneda==='bs' ? Number(r.general) : Number(r.general_usd)) : null);
+  const fi = s.map(r => r.financiero ? (idxMoneda==='bs' ? Number(r.financiero) : Number(r.financiero_usd)) : null);
+  const ii = s.map(r => r.industrial ? (idxMoneda==='bs' ? Number(r.industrial) : Number(r.industrial_usd)) : null);
   if (chartIG) chartIG.destroy();
   chartIG = new Chart(document.getElementById('chartIG'), {
     type:'line',
@@ -196,6 +211,27 @@ function renderCharts() {
 function setIdxMoneda(m) {
   idxMoneda = m;
   document.querySelectorAll('.idxseg').forEach(b => b.classList.toggle('active', b.dataset.m === m));
+  renderCharts();
+}
+
+function setIdxRango(key) {
+  idxRango = key;
+  document.querySelectorAll('.idxrango').forEach(b => b.classList.toggle('active', b.dataset.rango === key));
+  const hoy = new Date();
+  let d, h;
+  if (key === 'ytd') { d = isoF(new Date(hoy.getFullYear(),0,1)); h = isoF(hoy); }
+  else if (key === '3m') { const a = new Date(hoy); a.setMonth(a.getMonth()-3); d = isoF(a); h = isoF(hoy); }
+  else if (key === '6m') { const a = new Date(hoy); a.setMonth(a.getMonth()-6); d = isoF(a); h = isoF(hoy); }
+  else if (key === '1a') { const a = new Date(hoy); a.setFullYear(a.getFullYear()-1); d = isoF(a); h = isoF(hoy); }
+  else { d = ''; h = ''; }
+  document.getElementById('idxDesde').value = d ? d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8) : '';
+  document.getElementById('idxHasta').value = h ? h.slice(0,4)+'-'+h.slice(4,6)+'-'+h.slice(6,8) : '';
+  renderCharts();
+}
+
+function setIdxRangoCustom() {
+  idxRango = 'custom';
+  document.querySelectorAll('.idxrango').forEach(b => b.classList.remove('active'));
   renderCharts();
 }
 
@@ -330,6 +366,11 @@ async function init() {
   document.querySelectorAll('.idxseg').forEach(b =>
     b.addEventListener('click', () => setIdxMoneda(b.dataset.m))
   );
+  document.querySelectorAll('.idxrango').forEach(b =>
+    b.addEventListener('click', () => setIdxRango(b.dataset.rango))
+  );
+  document.getElementById('idxDesde').addEventListener('change', setIdxRangoCustom);
+  document.getElementById('idxHasta').addEventListener('change', setIdxRangoCustom);
   const btn = document.getElementById('btnActualizar');
   btn.addEventListener('click', async () => {
     btn.disabled = true;
