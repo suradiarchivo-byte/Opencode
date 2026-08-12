@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BVC Monitor - Mi Portafolio</title>
+<style>
+  :root { --dark:#12202b; --green:#1a7a3c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:'Segoe UI',system-ui,sans-serif; background:#f3f5f7; color:#22303c; }
+  header { background:var(--dark); color:#fff; padding:16px 28px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:20px; }
+  header .sub { opacity:.75; font-size:13px; }
+  .nav-links { display:flex; gap:6px; margin-left:14px; }
+  .nav-links a { color:#fff; text-decoration:none; padding:6px 12px; border-radius:8px; font-size:14px; opacity:.8; }
+  .nav-links a:hover { background:rgba(255,255,255,.12); opacity:1; }
+  .nav-links a.active { background:rgba(255,255,255,.18); opacity:1; }
+  .hdr-right { margin-left:auto; display:flex; align-items:center; gap:12px; }
+  main { max-width:1200px; margin:0 auto; padding:22px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:22px; }
+  .card { background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .card .label { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#6b7a86; }
+  .card .value { font-size:22px; font-weight:600; margin-top:4px; }
+  .card .delta { font-size:13px; margin-top:2px; }
+  .pos { color:var(--green); } .neg { color:#c0392b; } .flat { color:#6b7a86; }
+  .panel { background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:22px; }
+  .panel h2 { margin:0 0 12px; font-size:16px; }
+  .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+  input[type=date], input[type=number], input[type=text], select { padding:8px 10px; border:1px solid #cbd5dc; border-radius:8px; font-size:14px; }
+  .btn { background:var(--dark); color:#fff; border:0; padding:8px 16px; border-radius:8px; cursor:pointer; font-size:14px; }
+  .btn.green { background:#20a05b; }
+  .btn.danger { background:#c0392b; padding:4px 10px; font-size:12px; }
+  .btn:hover { opacity:.9; }
+  .btn:disabled { opacity:.6; cursor:wait; }
+  .table-scroll { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th, td { padding:7px 10px; border-bottom:1px solid #eef2f5; text-align:right; }
+  th:first-child, td:first-child { text-align:left; }
+  thead th { background:#f7f9fb; text-transform:uppercase; font-size:11.5px; color:#6b7a86; white-space:nowrap; }
+  .cantidad-edit { width:90px; }
+  .muted { color:#6b7a86; font-size:13px; }
+  .compra-row { display:flex; gap:10px; align-items:center; padding:8px 10px; border-bottom:1px solid #eef2f5; font-size:13.5px; flex-wrap:wrap; }
+  .aviso { background:#fff8e1; border:1px solid #f0e0a0; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:18px; color:#7a6a1e; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BVC Monitor</h1>
+  <div class="sub">Mi portafolio</div>
+  <nav class="nav-links">
+    <a href="/">Inicio</a>
+    <a href="/noticias">Noticias</a>
+    <a href="/portafolio" class="active">Portafolio</a>
+  </nav>
+  <div class="hdr-right"><span id="estado" class="sub"></span></div>
+</header>
+<main>
+  <div class="aviso">La valoración usa los <b>últimos precios de cierre</b> del sistema. Al ejecutar "Actualizar" en el inicio (o actualizar los diarios), los precios y valores del portafolio se recalculan automáticamente.</div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="panel">
+    <h2>Registrar compra</h2>
+    <div class="toolbar">
+      <input list="simbolos" id="fTicker" placeholder="Ticker, ej. BVL" style="width:150px">
+      <datalist id="simbolos"></datalist>
+      <input type="date" id="fFecha">
+      <input type="number" id="fCantidad" placeholder="Cantidad" min="0" step="any" style="width:110px">
+      <input type="number" id="fPrecio" placeholder="Precio Bs" min="0" step="any" style="width:120px">
+      <input type="number" id="fComision" placeholder="Comisión Bs" min="0" step="any" style="width:120px">
+      <input type="text" id="fNota" placeholder="Nota (opcional)" style="width:180px">
+      <button class="btn green" id="btnAgregar">Agregar compra</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Posiciones <span class="muted">(cantidad editable: ajusta tu tenencia actual)</span></h2>
+    <div class="table-scroll">
+      <table id="tablaPos">
+        <thead><tr>
+          <th>Ticker</th><th>Cantidad</th><th>Costo total Bs</th><th>Costo prom. Bs</th>
+          <th>Precio Bs</th><th>Precio USD</th><th>Valor Bs</th><th>Valor USD</th>
+          <th>Gan. Bs</th><th>Gan. USD</th><th>Gan. %</th><th>Compras</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Historial de compras</h2>
+    <div id="compras"></div>
+  </div>
+</main>
+
+<script>
+const fmt = n => n == null ? '-' : Number(n).toLocaleString('en-US', {maximumFractionDigits:2});
+const fmt4 = n => n == null ? '-' : Number(n).toLocaleString('en-US', {maximumFractionDigits:4});
+const pct = n => n == null ? '-' : (n>0?'+':'') + Number(n).toFixed(2) + '%';
+const cls = n => n == null ? 'flat' : (n>0?'pos':(n<0?'neg':'flat'));
+const fmtFecha = f => f ? f.slice(0,4)+'-'+f.slice(4,6)+'-'+f.slice(6,8) : '-';
+let simbolos = [], data = null;
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  return r.ok ? r.json() : null;
+}
+
+async function loadSimbolos() {
+  const j = await api('/api/simbolos');
+  simbolos = (j && j.simbolos) || [];
+  document.getElementById('simbolos').innerHTML = simbolos.map(s => '<option value="'+s+'"></option>').join('');
+}
+
+async function loadData() {
+  data = await api('/api/portafolio');
+  render();
+}
+
+function renderCards() {
+  const t = data.totales || {};
+  const cards = [
+    {label:'Valor total', value:'Bs '+fmt(t.valor_bs), delta:'US$ '+fmt4(t.valor_usd), c:'flat'},
+    {label:'Invertido (costo)', value:'Bs '+fmt(t.costo_bs), delta:'US$ '+fmt4(t.costo_bs/tasaActual()), c:'flat'},
+    {label:'Ganancia / Pérdida', value:'Bs '+fmt(t.ganancia_bs), delta:'US$ '+fmt4(t.ganancia_usd), c:cls(t.ganancia_bs)},
+  ];
+  document.getElementById('cards').innerHTML = cards.map(c =>
+    `<div class="card"><div class="label">${c.label}</div><div class="value">${c.value}</div><div class="delta ${c.c}">${c.delta}</div></div>`
+  ).join('');
+}
+
+function tasaActual() {
+  for (const f of (data.filas||[])) if (f.tasa_bcv) return Number(f.tasa_bcv);
+  return 1;
+}
+
+function renderPosiciones() {
+  const tb = document.querySelector('#tablaPos tbody');
+  const filas = data.filas || [];
+  if (!filas.length) {
+    tb.innerHTML = '<tr><td colspan="12" class="muted">Aún no tienes posiciones. Registra tu primera compra.</td></tr>';
+    return;
+  }
+  tb.innerHTML = filas.map(f => `
+    <tr>
+      <td><b>${f.ticker}</b> <span class="muted">(${fmtFecha(f.ultima_fecha)})</span></td>
+      <td><input type="number" class="cantidad-edit" value="${f.cantidad}" min="0" step="any" data-ticker="${f.ticker}"></td>
+      <td>${fmt(f.costo_total_bs)}</td>
+      <td>${fmt(f.costo_prom_bs)}</td>
+      <td>${fmt(f.precio_bs)}</td>
+      <td>${fmt4(f.precio_usd)}</td>
+      <td>${fmt(f.valor_bs)}</td>
+      <td>${fmt4(f.valor_usd)}</td>
+      <td class="${cls(f.ganancia_bs)}">${fmt(f.ganancia_bs)}</td>
+      <td class="${cls(f.ganancia_usd)}">${fmt4(f.ganancia_usd)}</td>
+      <td class="${cls(f.ganancia_pct)}">${pct(f.ganancia_pct)}</td>
+      <td>${f.n_compras}</td>
+    </tr>`).join('');
+  tb.querySelectorAll('.cantidad-edit').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const j = await api('/api/portafolio', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'set_posicion', ticker: inp.dataset.ticker, cantidad: Number(inp.value)})
+      });
+      if (j && j.ok) loadData();
+    });
+  });
+}
+
+function renderCompras() {
+  const div = document.getElementById('compras');
+  const compras = (data.compras || []).slice().sort((a,b)=>b.id-a.id);
+  if (!compras.length) {
+    div.innerHTML = '<div class="muted">Sin compras registradas.</div>';
+    return;
+  }
+  div.innerHTML = compras.map(c => `
+    <div class="compra-row">
+      <b>${c.ticker}</b>
+      <span class="muted">${fmtFecha(c.fecha)}</span>
+      <span>${c.cantidad} x Bs ${fmt(c.precio_bs)}</span>
+      <span class="muted">com. ${fmt(c.comision_bs)}</span>
+      ${c.nota ? '<span class="muted">· '+c.nota+'</span>' : ''}
+      <button class="btn danger" data-id="${c.id}">Eliminar</button>
+    </div>`).join('');
+  div.querySelectorAll('.btn.danger').forEach(b => {
+    b.addEventListener('click', async () => {
+      if (!confirm('Eliminar esta compra?')) return;
+      const j = await api('/api/portafolio', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'del_compra', id: Number(b.dataset.id)})
+      });
+      if (j && j.ok) loadData();
+    });
+  });
+}
+
+function render() {
+  if (!data) return;
+  renderCards();
+  renderPosiciones();
+  renderCompras();
+  const n = (data.filas||[]).length;
+  document.getElementById('estado').textContent = n + ' posiciones';
+}
+
+async function agregarCompra() {
+  const body = {
+    action:'add_compra',
+    ticker: document.getElementById('fTicker').value.trim(),
+    fecha: document.getElementById('fFecha').value.replace(/-/g,''),
+    cantidad: Number(document.getElementById('fCantidad').value),
+    precio_bs: Number(document.getElementById('fPrecio').value),
+    comision_bs: Number(document.getElementById('fComision').value || 0),
+    nota: document.getElementById('fNota').value.trim(),
+  };
+  if (!body.ticker || !body.cantidad || !body.precio_bs) { alert('Ticker, cantidad y precio son obligatorios.'); return; }
+  const btn = document.getElementById('btnAgregar');
+  btn.disabled = true;
+  const j = await api('/api/portafolio', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)
+  });
+  btn.disabled = false;
+  if (!j || !j.ok) { alert('No se pudo registrar la compra.'); return; }
+  ['fTicker','fCantidad','fPrecio','fComision','fNota'].forEach(id => document.getElementById(id).value = '');
+  data = j;
+  render();
+}
+
+function init() {
+  loadSimbolos();
+  loadData();
+  document.getElementById('btnAgregar').addEventListener('click', agregarCompra);
+}
+
+init();
+</script>
+</body>
+</html>

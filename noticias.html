@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BVC Monitor - Noticias de los diarios</title>
+<style>
+  :root { --dark:#12202b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:'Segoe UI',system-ui,sans-serif; background:#f3f5f7; color:#22303c; }
+  header { background:var(--dark); color:#fff; padding:16px 28px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:20px; }
+  header .sub { opacity:.75; font-size:13px; }
+  .nav-links { display:flex; gap:6px; margin-left:14px; }
+  .nav-links a { color:#fff; text-decoration:none; padding:6px 12px; border-radius:8px; font-size:14px; opacity:.8; }
+  .nav-links a:hover { background:rgba(255,255,255,.12); opacity:1; }
+  .nav-links a.active { background:rgba(255,255,255,.18); opacity:1; }
+  .hdr-right { margin-left:auto; display:flex; align-items:center; gap:12px; }
+  main { max-width:900px; margin:0 auto; padding:22px; }
+  .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:18px; flex-wrap:wrap; }
+  input[type=text], input[type=date] { padding:8px 10px; border:1px solid #cbd5dc; border-radius:8px; font-size:14px; }
+  #busqueda { flex:1; min-width:200px; }
+  .noticia { background:#fff; border-radius:10px; padding:16px 18px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:14px; }
+  .noticia .meta { font-size:12px; color:#6b7a86; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; }
+  .noticia .titulo { font-weight:600; font-size:15px; margin-bottom:8px; }
+  .noticia .texto { white-space:pre-wrap; font-size:13.5px; color:#3a4a58; line-height:1.55; }
+  .vacias { text-align:center; color:#6b7a86; padding:40px; }
+  .muted { color:#6b7a86; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BVC Monitor</h1>
+  <div class="sub">Notas / noticias de los diarios</div>
+  <nav class="nav-links">
+    <a href="/">Inicio</a>
+    <a href="/noticias" class="active">Noticias</a>
+    <a href="/portafolio">Portafolio</a>
+  </nav>
+  <div class="hdr-right"><span id="estado" class="sub"></span></div>
+</header>
+<main>
+  <div class="toolbar">
+    <input type="text" id="busqueda" placeholder="Buscar en titulos y texto...">
+    <span class="muted">Desde</span>
+    <input type="date" id="desde">
+    <span class="muted">Hasta</span>
+    <input type="date" id="hasta">
+    <span id="total" class="muted"></span>
+  </div>
+  <div id="lista"></div>
+</main>
+
+<script>
+const fmtFecha = f => f ? f.slice(0,4)+'-'+f.slice(4,6)+'-'+f.slice(6,8) : '';
+let noticias = [];
+
+async function cargar() {
+  try {
+    const r = await fetch('/api/noticias');
+    const j = await r.json();
+    noticias = j.noticias || [];
+    document.getElementById('estado').textContent = noticias.length + ' noticias';
+  } catch (e) { noticias = []; }
+}
+
+function render() {
+  const q = document.getElementById('busqueda').value.trim().toLowerCase();
+  const d = document.getElementById('desde').value.replace(/-/g,'');
+  const h = document.getElementById('hasta').value.replace(/-/g,'');
+  const filtradas = noticias.filter(n =>
+    (!q || (n.titulo+' '+n.texto).toLowerCase().includes(q)) &&
+    (!d || n.fecha >= d) && (!h || n.fecha <= h)
+  );
+  document.getElementById('total').textContent = 'Mostrando ' + filtradas.length;
+  const lista = document.getElementById('lista');
+  if (!filtradas.length) {
+    lista.innerHTML = '<div class="vacias">No hay noticias que coincidan.</div>';
+    return;
+  }
+  lista.innerHTML = filtradas.map(n => `
+    <div class="noticia">
+      <div class="meta">${fmtFecha(n.fecha)}</div>
+      <div class="titulo">${n.titulo}</div>
+      <div class="texto">${n.texto}</div>
+    </div>`).join('');
+}
+
+function init() {
+  document.getElementById('busqueda').addEventListener('input', render);
+  document.getElementById('desde').addEventListener('change', render);
+  document.getElementById('hasta').addEventListener('change', render);
+  cargar().then(render);
+}
+
+init();
+</script>
+</body>
+</html>
