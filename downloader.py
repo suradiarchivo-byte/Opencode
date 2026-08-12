@@ -51,7 +51,17 @@ def load_dates_csv():
         return {row["fecha"] for row in reader}
 
 
-def _row_for_date(date_yyyymmdd, parsed):
+SCALE_SPLIT_DATE = "20250725"
+SCALE_FACTOR = 1000.0
+
+
+def _escala(value, fecha):
+    if value is None or fecha > SCALE_SPLIT_DATE:
+        return value
+    return value / SCALE_FACTOR
+
+
+def _row_for_date(date_yyymmdd, parsed):
     ig = parsed["indices"].get("general") or {}
     fi = parsed["indices"].get("financiero") or {}
     ii = parsed["indices"].get("industrial") or {}
@@ -64,21 +74,25 @@ def _row_for_date(date_yyyymmdd, parsed):
             return None
         return round(value / tasa, 6)
 
+    g = _escala(ig.get("valor"), date_yyymmdd)
+    f = _escala(fi.get("valor"), date_yyymmdd)
+    i = _escala(ii.get("valor"), date_yyymmdd)
+
     return {
-        "fecha": date_yyyymmdd,
-        "general": ig.get("valor"),
-        "general_var_abs": ig.get("var_abs"),
+        "fecha": date_yyymmdd,
+        "general": g,
+        "general_var_abs": _escala(ig.get("var_abs"), date_yyymmdd),
         "general_var_rel": ig.get("var_rel"),
-        "financiero": fi.get("valor"),
-        "financiero_var_abs": fi.get("var_abs"),
+        "financiero": f,
+        "financiero_var_abs": _escala(fi.get("var_abs"), date_yyymmdd),
         "financiero_var_rel": fi.get("var_rel"),
-        "industrial": ii.get("valor"),
-        "industrial_var_abs": ii.get("var_abs"),
+        "industrial": i,
+        "industrial_var_abs": _escala(ii.get("var_abs"), date_yyymmdd),
         "industrial_var_rel": ii.get("var_rel"),
         "tasa": tasa,
-        "general_usd": _usd(ig.get("valor")),
-        "financiero_usd": _usd(fi.get("valor")),
-        "industrial_usd": _usd(ii.get("valor")),
+        "general_usd": _usd(g),
+        "financiero_usd": _usd(f),
+        "industrial_usd": _usd(i),
         "tasa_cambio": parsed.get("tasa_cambio"),
         "alza": vbe.get("alza"),
         "baja": vbe.get("baja"),
