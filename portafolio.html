@@ -74,7 +74,7 @@
   </div>
 
   <div class="panel">
-    <h2>Posiciones <span class="muted">(cantidad editable: ajusta tu tenencia actual)</span></h2>
+    <h2>Posiciones <span class="muted">(la cantidad refleja la suma de tus compras)</span></h2>
     <div class="table-scroll">
       <table id="tablaPos">
         <thead><tr>
@@ -144,7 +144,7 @@ function renderPosiciones() {
   tb.innerHTML = filas.map(f => `
     <tr>
       <td><b>${f.ticker}</b> <span class="muted">(${fmtFecha(f.ultima_fecha)})</span></td>
-      <td><input type="number" class="cantidad-edit" value="${f.cantidad}" min="0" step="any" data-ticker="${f.ticker}"></td>
+      <td>${f.cantidad}</td>
       <td>${fmt(f.costo_total_bs)}</td>
       <td>${fmt(f.costo_prom_bs)}</td>
       <td>${fmt(f.precio_bs)}</td>
@@ -156,16 +156,6 @@ function renderPosiciones() {
       <td class="${cls(f.ganancia_pct)}">${pct(f.ganancia_pct)}</td>
       <td>${f.n_compras}</td>
     </tr>`).join('');
-  tb.querySelectorAll('.cantidad-edit').forEach(inp => {
-    inp.addEventListener('change', async () => {
-      const j = await api('/api/portafolio', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({action:'set_posicion', ticker: inp.dataset.ticker, cantidad: Number(inp.value)})
-      });
-      if (j && j.ok) loadData();
-    });
-  });
 }
 
 function renderCompras() {

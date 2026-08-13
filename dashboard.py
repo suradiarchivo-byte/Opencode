@@ -114,11 +114,9 @@ def _valoracion():
     last, by_sym = _prices_flat()
     pf = _read_portafolio()
     compras = pf.get("compras", [])
-    posiciones = pf.get("posiciones", {})
-    tickers = sorted(set(list(posiciones) + [c["ticker"] for c in compras]))
+    tickers = sorted(set(c["ticker"] for c in compras))
     filas = []
     for sim in tickers:
-        cantidad = float(posiciones.get(sim, 0) or 0)
         compras_sym = [c for c in compras if c["ticker"] == sim]
         costo_bs = 0.0
         costo_usd = 0.0
@@ -143,8 +141,8 @@ def _valoracion():
         precio_usd = _fnum(ult.get("precio_usd")) if ult else None
         tasa = _fnum(ult.get("tasa_bcv")) if ult else None
         costo_prom = (costo_bs / cant_comprada) if cant_comprada else None
-        valor_bs = cantidad * precio_bs if (cantidad and precio_bs is not None) else None
-        valor_usd = cantidad * precio_usd if (cantidad and precio_usd is not None) else None
+        valor_bs = cant_comprada * precio_bs if (cant_comprada and precio_bs is not None) else None
+        valor_usd = cant_comprada * precio_usd if (cant_comprada and precio_usd is not None) else None
         ganancia_bs = (valor_bs - costo_bs) if (valor_bs is not None and cant_comprada) else None
         if valor_usd is not None and cant_comprada:
             ganancia_usd = valor_usd - costo_usd
@@ -154,7 +152,7 @@ def _valoracion():
         filas.append(
             {
                 "ticker": sim,
-                "cantidad": cantidad,
+                "cantidad": cant_comprada,
                 "costo_total_bs": round(costo_bs, 2),
                 "costo_prom_bs": round(costo_prom, 4) if costo_prom is not None else None,
                 "costo_total_usd": round(costo_usd, 4),
@@ -177,7 +175,7 @@ def _valoracion():
         "ganancia_bs": round(sum(f["ganancia_bs"] for f in filas if f["ganancia_bs"]), 2),
         "ganancia_usd": round(sum(f["ganancia_usd"] for f in filas if f["ganancia_usd"]), 4),
     }
-    return {"filas": filas, "totales": totales, "compras": compras, "posiciones": posiciones}
+    return {"filas": filas, "totales": totales, "compras": compras}
 
 
 def _run_update():
@@ -335,27 +333,12 @@ class Handler(BaseHTTPRequestHandler):
                         "nota": str(body.get("nota", "")),
                     }
                 )
-                posiciones = pf.setdefault("posiciones", {})
-                posiciones[ticker] = float(posiciones.get(ticker, 0) or 0) + cantidad
                 _write_portafolio(pf)
                 self._send_json({"ok": True, **{k: v for k, v in _valoracion().items()}})
             elif action == "del_compra":
                 cid = int(body.get("id", 0))
                 compras = pf.setdefault("compras", [])
                 pf["compras"] = [c for c in compras if c.get("id") != cid]
-                _write_portafolio(pf)
-                self._send_json({"ok": True, **{k: v for k, v in _valoracion().items()}})
-            elif action == "set_posicion":
-                ticker = str(body.get("ticker", "")).upper()
-                cantidad = float(body.get("cantidad", 0) or 0)
-                if not ticker or cantidad < 0:
-                    self._send_json({"error": "datos invalidos"}, 400)
-                    return
-                posiciones = pf.setdefault("posiciones", {})
-                if cantidad == 0:
-                    posiciones.pop(ticker, None)
-                else:
-                    posiciones[ticker] = cantidad
                 _write_portafolio(pf)
                 self._send_json({"ok": True, **{k: v for k, v in _valoracion().items()}})
             else:
