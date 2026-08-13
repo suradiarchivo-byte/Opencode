@@ -28,7 +28,14 @@
   .btn:disabled { opacity:.6; cursor:wait; }
   .btn.danger { background:#c0392b; padding:4px 10px; font-size:12px; }
   .muted { color:#6b7a86; font-size:13px; }
-  .compra-row { display:flex; gap:10px; align-items:center; padding:8px 10px; border-bottom:1px solid #eef2f5; font-size:13.5px; flex-wrap:wrap; }
+  .table-scroll { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th, td { padding:7px 10px; border-bottom:1px solid #eef2f5; text-align:right; }
+  th:first-child, td:first-child { text-align:left; }
+  thead th { background:#f7f9fb; text-transform:uppercase; font-size:11.5px; color:#6b7a86; white-space:nowrap; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11.5px; font-weight:600; }
+  .tag.compra { background:#e3f4e9; color:#1a7a3c; }
+  .tag.venta { background:#fdeaea; color:#c0392b; }
   .aviso { background:#fff8e1; border:1px solid #f0e0a0; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:18px; color:#7a6a1e; }
 </style>
 </head>
@@ -75,13 +82,16 @@
   </div>
 
   <div class="panel">
-    <h2>Historial de compras</h2>
-    <div id="compras"></div>
-  </div>
-
-  <div class="panel">
-    <h2>Historial de ventas</h2>
-    <div id="ventas"></div>
+    <h2>Historial de operaciones</h2>
+    <div class="table-scroll">
+      <table id="tablaHist">
+        <thead><tr>
+          <th>Tipo</th><th>Ticker</th><th>Fecha</th><th>Cantidad</th><th>Precio Bs</th>
+          <th>Monto Bs</th><th>Comisión Bs</th><th>Nota</th><th></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </div>
 </main>
 
@@ -106,46 +116,32 @@ async function loadData() {
   render();
 }
 
-function renderCompras() {
-  const div = document.getElementById('compras');
-  const compras = (data.compras || []).slice().sort((a,b)=>b.id-a.id);
-  if (!compras.length) {
-    div.innerHTML = '<div class="muted">Sin compras registradas.</div>';
+function renderHistorial() {
+  const tb = document.querySelector('#tablaHist tbody');
+  const compras = (data.compras || []).map(c => ({...c, tipo:'compra'}));
+  const ventas = (data.ventas || []).map(v => ({...v, tipo:'venta'}));
+  const ops = compras.concat(ventas).sort((a,b) => (b.fecha||'')-(a.fecha||''));
+  if (!ops.length) {
+    tb.innerHTML = '<tr><td colspan="9" class="muted">Sin operaciones registradas.</td></tr>';
     return;
   }
-  div.innerHTML = compras.map(c => `
-    <div class="compra-row">
-      <b>${c.ticker}</b>
-      <span class="muted">${fmtFecha(c.fecha)}</span>
-      <span>${c.cantidad} x Bs ${fmt(c.precio_bs)}</span>
-      <span class="muted">com. ${fmt(c.comision_bs)}</span>
-      ${c.nota ? '<span class="muted">· '+c.nota+'</span>' : ''}
-      <button class="btn danger" data-kind="compras" data-id="${c.id}">Eliminar</button>
-    </div>`).join('');
-}
-
-function renderVentas() {
-  const div = document.getElementById('ventas');
-  const ventas = (data.ventas || []).slice().sort((a,b)=>b.id-a.id);
-  if (!ventas.length) {
-    div.innerHTML = '<div class="muted">Sin ventas registradas.</div>';
-    return;
-  }
-  div.innerHTML = ventas.map(v => `
-    <div class="compra-row">
-      <b>${v.ticker}</b>
-      <span class="muted">${fmtFecha(v.fecha)}</span>
-      <span>${v.cantidad} x Bs ${fmt(v.precio_bs)}</span>
-      <span class="muted">com. ${fmt(v.comision_bs)}</span>
-      ${v.nota ? '<span class="muted">· '+v.nota+'</span>' : ''}
-      <button class="btn danger" data-kind="ventas" data-id="${v.id}">Eliminar</button>
-    </div>`).join('');
+  tb.innerHTML = ops.map(o => `
+    <tr>
+      <td><span class="tag ${o.tipo}">${o.tipo === 'compra' ? 'Compra' : 'Venta'}</span></td>
+      <td><b>${o.ticker}</b></td>
+      <td>${fmtFecha(o.fecha)}</td>
+      <td>${o.cantidad}</td>
+      <td>${fmt(o.precio_bs)}</td>
+      <td>${fmt((o.cantidad||0) * (o.precio_bs||0))}</td>
+      <td>${fmt(o.comision_bs)}</td>
+      <td class="muted">${o.nota || ''}</td>
+      <td><button class="btn danger" data-kind="${o.tipo}" data-id="${o.id}">Eliminar</button></td>
+    </tr>`).join('');
 }
 
 function render() {
   if (!data) return;
-  renderCompras();
-  renderVentas();
+  renderHistorial();
   document.getElementById('estado').textContent =
     (data.compras||[]).length + ' compras · ' + (data.ventas||[]).length + ' ventas';
 }
@@ -181,25 +177,15 @@ function init() {
   loadData();
   document.getElementById('btnAgregar').addEventListener('click', () => agregar('compras'));
   document.getElementById('btnVender').addEventListener('click', () => agregar('ventas'));
-  document.getElementById('compras').addEventListener('click', async e => {
-    const b = e.target.closest('.btn.danger[data-kind="compras"]');
+  document.getElementById('tablaHist').addEventListener('click', async e => {
+    const b = e.target.closest('.btn.danger[data-kind]');
     if (!b) return;
-    if (!confirm('Eliminar esta compra?')) return;
+    const kind = b.dataset.kind;
+    if (!confirm('Eliminar esta ' + (kind === 'venta' ? 'venta' : 'compra') + '?')) return;
     const j = await api('/api/portafolio', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({action:'del_compra', id: Number(b.dataset.id)})
-    });
-    if (j && j.ok) data = j, render();
-  });
-  document.getElementById('ventas').addEventListener('click', async e => {
-    const b = e.target.closest('.btn.danger[data-kind="ventas"]');
-    if (!b) return;
-    if (!confirm('Eliminar esta venta?')) return;
-    const j = await api('/api/portafolio', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({action:'del_venta', id: Number(b.dataset.id)})
+      body: JSON.stringify({action: kind === 'venta' ? 'del_venta' : 'del_compra', id: Number(b.dataset.id)})
     });
     if (j && j.ok) data = j, render();
   });
