@@ -18,6 +18,7 @@ PORTAFOLIO_JSON = DATA_DIR / "portafolio.json"
 HTML = ROOT / "dashboard.html"
 HTML_NOTICIAS = ROOT / "noticias.html"
 HTML_PORTAFOLIO = ROOT / "portafolio.html"
+HTML_REGISTROS = ROOT / "registros.html"
 
 _cache = {}
 
@@ -93,7 +94,7 @@ def _noticias():
 
 def _read_portafolio():
     if not PORTAFOLIO_JSON.exists():
-        return {"compras": [], "posiciones": {}}
+        return {"compras": [], "ventas": []}
     with open(PORTAFOLIO_JSON, encoding="utf-8") as fh:
         return json.load(fh)
 
@@ -114,10 +115,12 @@ def _valoracion():
     last, by_sym = _prices_flat()
     pf = _read_portafolio()
     compras = pf.get("compras", [])
-    tickers = sorted(set(c["ticker"] for c in compras))
+    ventas = pf.get("ventas", [])
+    tickers = sorted(set([c["ticker"] for c in compras] + [v["ticker"] for v in ventas]))
     filas = []
     for sim in tickers:
         compras_sym = [c for c in compras if c["ticker"] == sim]
+        ventas_sym = [v for v in ventas if v["ticker"] == sim]
         costo_bs = 0.0
         costo_usd = 0.0
         cant_comprada = 0.0
@@ -136,26 +139,33 @@ def _valoracion():
             else:
                 precio_usd = _fnum(fila_p.get("precio_usd")) if fila_p else None
                 costo_usd += q * (precio_usd or 0)
+        cant_vendida = sum(float(v.get("cantidad", 0) or 0) for v in ventas_sym)
+        cantidad = max(0.0, cant_comprada - cant_vendida)
         ult = last.get(sim)
         precio_bs = _fnum(ult.get("precio_bs")) if ult else None
         precio_usd = _fnum(ult.get("precio_usd")) if ult else None
         tasa = _fnum(ult.get("tasa_bcv")) if ult else None
         costo_prom = (costo_bs / cant_comprada) if cant_comprada else None
-        valor_bs = cant_comprada * precio_bs if (cant_comprada and precio_bs is not None) else None
-        valor_usd = cant_comprada * precio_usd if (cant_comprada and precio_usd is not None) else None
-        ganancia_bs = (valor_bs - costo_bs) if (valor_bs is not None and cant_comprada) else None
-        if valor_usd is not None and cant_comprada:
-            ganancia_usd = valor_usd - costo_usd
+        costo_bs_tenido = costo_prom * cantidad if (costo_prom and cantidad) else 0.0
+        costo_usd_tenido = costo_prom_usd = None
+        if cant_comprada and costo_usd:
+            costo_prom_usd = costo_usd / cant_comprada
+            costo_usd_tenido = costo_prom_usd * cantidad
+        valor_bs = cantidad * precio_bs if (cantidad and precio_bs is not None) else None
+        valor_usd = cantidad * precio_usd if (cantidad and precio_usd is not None) else None
+        ganancia_bs = (valor_bs - costo_bs_tenido) if (valor_bs is not None and cantidad) else None
+        if valor_usd is not None and cantidad:
+            ganancia_usd = valor_usd - (costo_usd_tenido or 0.0)
         else:
             ganancia_usd = None
-        ganancia_pct = (ganancia_bs / costo_bs * 100) if (ganancia_bs is not None and costo_bs) else None
+        ganancia_pct = (ganancia_bs / costo_bs_tenido * 100) if (ganancia_bs is not None and costo_bs_tenido) else None
         filas.append(
             {
                 "ticker": sim,
-                "cantidad": cant_comprada,
-                "costo_total_bs": round(costo_bs, 2),
+                "cantidad": cantidad,
+                "costo_total_bs": round(costo_bs_tenido, 2),
                 "costo_prom_bs": round(costo_prom, 4) if costo_prom is not None else None,
-                "costo_total_usd": round(costo_usd, 4),
+                "costo_total_usd": round(costo_usd_tenido, 4) if costo_usd_tenido is not None else None,
                 "precio_bs": precio_bs,
                 "precio_usd": precio_usd,
                 "tasa_bcv": tasa,
@@ -166,6 +176,7 @@ def _valoracion():
                 "ganancia_usd": round(ganancia_usd, 4) if ganancia_usd is not None else None,
                 "ganancia_pct": round(ganancia_pct, 2) if ganancia_pct is not None else None,
                 "n_compras": len(compras_sym),
+                "n_ventas": len(ventas_sym),
             }
         )
     totales = {
@@ -175,7 +186,58 @@ def _valoracion():
         "ganancia_bs": round(sum(f["ganancia_bs"] for f in filas if f["ganancia_bs"]), 2),
         "ganancia_usd": round(sum(f["ganancia_usd"] for f in filas if f["ganancia_usd"]), 4),
     }
-    return {"filas": filas, "totales": totales, "compras": compras}
+    return {"filas": filas, "totales": totales, "compras": compras, "ventas": ventas}
+
+
+def _evolucion():
+    pf = _read_portafolio()
+    compras = pf.get("compras", [])
+    ventas = pf.get("ventas", [])
+    if not compras and not ventas:
+        return []
+    rows = _read_prices()
+    fechas = sorted({r["fecha"] for r in rows})
+    by_sym = {}
+    for r in rows:
+        by_sym.setdefault(r["simbolo"], {})[r["fecha"]] = r
+    ops = {}
+    for c in compras:
+        ops.setdefault(c["ticker"], []).append((str(c.get("fecha", "")), float(c.get("cantidad", 0) or 0)))
+    for v in ventas:
+        ops.setdefault(v["ticker"], []).append((str(v.get("fecha", "")), -float(v.get("cantidad", 0) or 0)))
+    tickers = sorted(ops)
+    for t in tickers:
+        ops[t].sort()
+    idx = {t: 0 for t in tickers}
+    qty = {t: 0.0 for t in tickers}
+    last_px = {}
+    out = []
+    for fecha in fechas:
+        for t in tickers:
+            while idx[t] < len(ops[t]) and ops[t][idx[t]][0] <= fecha:
+                qty[t] += ops[t][idx[t]][1]
+                idx[t] += 1
+            pr = by_sym.get(t, {}).get(fecha)
+            if pr:
+                last_px[t] = pr
+        valor_bs = 0.0
+        valor_usd = 0.0
+        for t in tickers:
+            q = qty[t]
+            if q <= 0:
+                continue
+            pr = last_px.get(t)
+            if not pr:
+                continue
+            pb = _fnum(pr.get("precio_bs"))
+            pu = _fnum(pr.get("precio_usd"))
+            if pb:
+                valor_bs += q * pb
+            if pu:
+                valor_usd += q * pu
+        if valor_bs or valor_usd:
+            out.append({"fecha": fecha, "valor_bs": round(valor_bs, 2), "valor_usd": round(valor_usd, 4)})
+    return out
 
 
 def _run_update():
@@ -237,6 +299,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_html("noticias.html")
         elif path == "/portafolio":
             self._send_html("portafolio.html")
+        elif path == "/registros":
+            self._send_html("registros.html")
         elif path == "/api/indices":
             self._send_json({"series": _read_indices()})
         elif path == "/api/dias":
@@ -269,6 +333,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"noticias": _noticias()})
         elif path == "/api/portafolio":
             self._send_json(_valoracion())
+        elif path == "/api/evolucion":
+            self._send_json({"serie": _evolucion()})
         elif path == "/api/estado":
             last, _ = _prices_flat()
             fecha = ""
@@ -341,6 +407,34 @@ class Handler(BaseHTTPRequestHandler):
                 pf["compras"] = [c for c in compras if c.get("id") != cid]
                 _write_portafolio(pf)
                 self._send_json({"ok": True, **{k: v for k, v in _valoracion().items()}})
+            elif action == "add_venta":
+                ticker = str(body.get("ticker", "")).upper()
+                cantidad = float(body.get("cantidad", 0) or 0)
+                precio = float(body.get("precio_bs", 0) or 0)
+                if not ticker or cantidad <= 0 or precio <= 0:
+                    self._send_json({"error": "datos invalidos"}, 400)
+                    return
+                ventas = pf.setdefault("ventas", [])
+                nid = max((v.get("id", 0) for v in ventas), default=0) + 1
+                ventas.append(
+                    {
+                        "id": nid,
+                        "ticker": ticker,
+                        "fecha": str(body.get("fecha", "")),
+                        "cantidad": cantidad,
+                        "precio_bs": precio,
+                        "comision_bs": float(body.get("comision_bs", 0) or 0),
+                        "nota": str(body.get("nota", "")),
+                    }
+                )
+                _write_portafolio(pf)
+                self._send_json({"ok": True, **{k: v for k, v in _valoracion().items()}})
+            elif action == "del_venta":
+                vid = int(body.get("id", 0))
+                ventas = pf.setdefault("ventas", [])
+                pf["ventas"] = [v for v in ventas if v.get("id") != vid]
+                _write_portafolio(pf)
+                self._send_json({"ok": True, **{k: v for k, v in _valoracion().items()}})
             else:
                 self._send_json({"error": "accion desconocida"}, 400)
         else:
@@ -355,7 +449,8 @@ def main(port=8000):
     print(f"Dashboard disponible en http://127.0.0.1:{port}")
     print(f"  /           - Inicio (indices, ticker, cotizaciones)")
     print(f"  /noticias   - Notas de los diarios")
-    print(f"  /portafolio - Mi portafolio")
+    print(f"  /portafolio - Resumen del portafolio (evolucion)")
+    print(f"  /registros  - Registro de compras/ventas")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

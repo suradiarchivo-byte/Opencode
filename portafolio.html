@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BVC Monitor - Mi Portafolio</title>
+<title>BVC Monitor - Portafolio</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root { --dark:#12202b; --green:#1a7a3c; }
   * { box-sizing:border-box; }
@@ -17,10 +18,10 @@
   .nav-links a.active { background:rgba(255,255,255,.18); opacity:1; }
   .hdr-right { margin-left:auto; display:flex; align-items:center; gap:12px; }
   main { max-width:1200px; margin:0 auto; padding:22px; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:22px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:14px; margin-bottom:22px; }
   .card { background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
   .card .label { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:#6b7a86; }
-  .card .value { font-size:22px; font-weight:600; margin-top:4px; }
+  .card .value { font-size:24px; font-weight:600; margin-top:4px; }
   .card .delta { font-size:13px; margin-top:2px; }
   .pos { color:var(--green); } .neg { color:#c0392b; } .flat { color:#6b7a86; }
   .panel { background:#fff; border-radius:10px; padding:16px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:22px; }
@@ -32,64 +33,75 @@
   .btn.danger { background:#c0392b; padding:4px 10px; font-size:12px; }
   .btn:hover { opacity:.9; }
   .btn:disabled { opacity:.6; cursor:wait; }
+  .seg { border:1px solid #cbd5dc; background:#fff; border-radius:8px; padding:8px 14px; cursor:pointer; font-size:14px; }
+  .seg.active { background:var(--dark); color:#fff; border-color:var(--dark); }
   .table-scroll { overflow-x:auto; }
   table { width:100%; border-collapse:collapse; font-size:13.5px; }
   th, td { padding:7px 10px; border-bottom:1px solid #eef2f5; text-align:right; }
   th:first-child, td:first-child { text-align:left; }
   thead th { background:#f7f9fb; text-transform:uppercase; font-size:11.5px; color:#6b7a86; white-space:nowrap; }
-  .cantidad-edit { width:90px; }
   .muted { color:#6b7a86; font-size:13px; }
-  .compra-row { display:flex; gap:10px; align-items:center; padding:8px 10px; border-bottom:1px solid #eef2f5; font-size:13.5px; flex-wrap:wrap; }
-  .aviso { background:#fff8e1; border:1px solid #f0e0a0; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:18px; color:#7a6a1e; }
+  .chart-box { position:relative; height:340px; }
+  .var-resumen { display:flex; gap:22px; flex-wrap:wrap; align-items:center; margin-top:12px; }
+  .var-bloque { text-align:center; }
+  .var-bloque .v { font-size:26px; font-weight:700; }
+  .var-bloque .l { font-size:12px; text-transform:uppercase; color:#6b7a86; letter-spacing:.05em; }
 </style>
 </head>
 <body>
 <header>
   <h1>BVC Monitor</h1>
-  <div class="sub">Mi portafolio</div>
+  <div class="sub">Portafolio</div>
   <nav class="nav-links">
     <a href="/">Inicio</a>
     <a href="/noticias">Noticias</a>
     <a href="/portafolio" class="active">Portafolio</a>
+    <a href="/registros">Registros compra/venta</a>
   </nav>
   <div class="hdr-right"><span id="estado" class="sub"></span></div>
 </header>
 <main>
-  <div class="aviso">La valoración usa los <b>últimos precios de cierre</b> del sistema. Al ejecutar "Actualizar" en el inicio (o actualizar los diarios), los precios y valores del portafolio se recalculan automáticamente.</div>
+  <div class="aviso" style="background:#fff8e1;border:1px solid #f0e0a0;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:18px;color:#7a6a1e;">
+    La valoración usa los <b>últimos precios de cierre</b> del sistema. Al ejecutar "Actualizar" en el inicio (o actualizar los diarios), los precios y valores se recalculan automáticamente.
+  </div>
 
   <div class="cards" id="cards"></div>
 
   <div class="panel">
-    <h2>Registrar compra</h2>
+    <h2>Evolución del portafolio
+      <span style="float:right">
+        <button class="seg evseg active" data-m="usd">USD</button>
+        <button class="seg evseg" data-m="bs">Bs</button>
+      </span>
+    </h2>
     <div class="toolbar">
-      <input list="simbolos" id="fTicker" placeholder="Ticker, ej. BVL" style="width:150px">
-      <datalist id="simbolos"></datalist>
-      <input type="date" id="fFecha">
-      <input type="number" id="fCantidad" placeholder="Cantidad" min="0" step="any" style="width:110px">
-      <input type="number" id="fPrecio" placeholder="Precio Bs" min="0" step="any" style="width:120px">
-      <input type="number" id="fComision" placeholder="Comisión Bs" min="0" step="any" style="width:120px">
-      <input type="text" id="fNota" placeholder="Nota (opcional)" style="width:180px">
-      <button class="btn green" id="btnAgregar">Agregar compra</button>
+      <span class="muted">Rango:</span>
+      <button class="seg evrango active" data-rango="todo">Todo</button>
+      <button class="seg evrango" data-rango="ytd">YTD</button>
+      <button class="seg evrango" data-rango="3m">3M</button>
+      <button class="seg evrango" data-rango="6m">6M</button>
+      <button class="seg evrango" data-rango="1a">1A</button>
+      <span class="muted">Desde</span>
+      <input type="date" id="evDesde">
+      <span class="muted">Hasta</span>
+      <input type="date" id="evHasta">
     </div>
+    <div class="chart-box"><canvas id="chartEvo"></canvas></div>
+    <div class="var-resumen" id="varResumen"></div>
   </div>
 
   <div class="panel">
-    <h2>Posiciones <span class="muted">(la cantidad refleja la suma de tus compras)</span></h2>
+    <h2>Tenencias (último precio en pizarra)</h2>
     <div class="table-scroll">
       <table id="tablaPos">
         <thead><tr>
-          <th>Ticker</th><th>Cantidad</th><th>Costo total Bs</th><th>Costo prom. Bs</th>
+          <th>Ticker</th><th>Cantidad</th><th>Costo prom. Bs</th>
           <th>Precio Bs</th><th>Precio USD</th><th>Valor Bs</th><th>Valor USD</th>
-          <th>Gan. Bs</th><th>Gan. USD</th><th>Gan. %</th><th>Compras</th>
+          <th>Gan. Bs</th><th>Gan. USD</th><th>Gan. %</th><th>Compras/Ventas</th>
         </tr></thead>
         <tbody></tbody>
       </table>
     </div>
-  </div>
-
-  <div class="panel">
-    <h2>Historial de compras</h2>
-    <div id="compras"></div>
   </div>
 </main>
 
@@ -99,29 +111,56 @@ const fmt4 = n => n == null ? '-' : Number(n).toLocaleString('en-US', {maximumFr
 const pct = n => n == null ? '-' : (n>0?'+':'') + Number(n).toFixed(2) + '%';
 const cls = n => n == null ? 'flat' : (n>0?'pos':(n<0?'neg':'flat'));
 const fmtFecha = f => f ? f.slice(0,4)+'-'+f.slice(4,6)+'-'+f.slice(6,8) : '-';
-let simbolos = [], data = null;
+let data = null, serieEvo = [], chartEvo = null, evMoneda = 'usd', evRango = 'todo';
 
-async function api(path, opts) {
-  const r = await fetch(path, opts);
-  return r.ok ? r.json() : null;
+function isoF(d) {
+  return String(d.getFullYear())+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
 }
 
-async function loadSimbolos() {
-  const j = await api('/api/simbolos');
-  simbolos = (j && j.simbolos) || [];
-  document.getElementById('simbolos').innerHTML = simbolos.map(s => '<option value="'+s+'"></option>').join('');
+async function api(path) {
+  const r = await fetch(path);
+  return r.ok ? r.json() : null;
 }
 
 async function loadData() {
   data = await api('/api/portafolio');
+  const ev = await api('/api/evolucion');
+  serieEvo = (ev && ev.serie) || [];
   render();
+}
+
+function setEvMoneda(m) {
+  evMoneda = m;
+  document.querySelectorAll('.evseg').forEach(b => b.classList.toggle('active', b.dataset.m === m));
+  renderEvolucion();
+}
+
+function setEvRango(key) {
+  evRango = key;
+  document.querySelectorAll('.evrango').forEach(b => b.classList.toggle('active', b.dataset.rango === key));
+  const hoy = new Date();
+  let d, h;
+  if (key === 'ytd') { d = isoF(new Date(hoy.getFullYear(),0,1)); h = isoF(hoy); }
+  else if (key === '3m') { const a = new Date(hoy); a.setMonth(a.getMonth()-3); d = isoF(a); h = isoF(hoy); }
+  else if (key === '6m') { const a = new Date(hoy); a.setMonth(a.getMonth()-6); d = isoF(a); h = isoF(hoy); }
+  else if (key === '1a') { const a = new Date(hoy); a.setFullYear(a.getFullYear()-1); d = isoF(a); h = isoF(hoy); }
+  else { d = ''; h = ''; }
+  document.getElementById('evDesde').value = d ? d.slice(0,4)+'-'+d.slice(4,6)+'-'+d.slice(6,8) : '';
+  document.getElementById('evHasta').value = h ? h.slice(0,4)+'-'+h.slice(4,6)+'-'+h.slice(6,8) : '';
+  renderEvolucion();
+}
+
+function setEvRangoCustom() {
+  evRango = 'custom';
+  document.querySelectorAll('.evrango').forEach(b => b.classList.remove('active'));
+  renderEvolucion();
 }
 
 function renderCards() {
   const t = data.totales || {};
   const cards = [
-    {label:'Valor total', value:'Bs '+fmt(t.valor_bs), delta:'US$ '+fmt4(t.valor_usd), c:'flat'},
-    {label:'Invertido (costo)', value:'Bs '+fmt(t.costo_bs), delta:'US$ '+fmt4(t.costo_bs/tasaActual()), c:'flat'},
+    {label:'Valor total', value:'US$ '+fmt4(t.valor_usd), delta:'Bs '+fmt(t.valor_bs), c:'flat'},
+    {label:'Invertido (costo)', value:'Bs '+fmt(t.costo_bs), delta:'US$ '+fmt4(t.costo_bs / tasaActual()), c:'flat'},
     {label:'Ganancia / Pérdida', value:'Bs '+fmt(t.ganancia_bs), delta:'US$ '+fmt4(t.ganancia_usd), c:cls(t.ganancia_bs)},
   ];
   document.getElementById('cards').innerHTML = cards.map(c =>
@@ -134,18 +173,58 @@ function tasaActual() {
   return 1;
 }
 
+function renderEvolucion() {
+  const dsel = document.getElementById('evDesde').value.replace(/-/g,'');
+  const hsel = document.getElementById('evHasta').value.replace(/-/g,'');
+  const s = serieEvo.filter(r => (!dsel || r.fecha >= dsel) && (!hsel || r.fecha <= hsel));
+  const labels = s.map(r => r.fecha);
+  const key = evMoneda === 'usd' ? 'valor_usd' : 'valor_bs';
+  const dec = evMoneda === 'usd' ? 4 : 2;
+  const vals = s.map(r => r[key] != null ? Number(r[key]) : null);
+  if (chartEvo) chartEvo.destroy();
+  chartEvo = new Chart(document.getElementById('chartEvo'), {
+    type:'line',
+    data:{labels, datasets:[{data:vals, label: evMoneda==='usd'?'Valor USD':'Valor Bs', borderColor:'#1a7a3c', backgroundColor:'rgba(26,122,60,.08)', fill:true, tension:.2, pointRadius:1, spanGaps:true}]},
+    options:{plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>v.toLocaleString('en-US',{maximumFractionDigits:dec})}}, x:{ticks:{maxTicksLimit:12}}}, maintainAspectRatio:false}
+  });
+  renderVariacion(s);
+}
+
+function renderVariacion(s) {
+  const div = document.getElementById('varResumen');
+  if (!s.length) { div.innerHTML = ''; return; }
+  const k = 'valor_usd';
+  const pts = s.map(r => Number(r[k])).filter(v => v != null && v > 0);
+  if (!pts.length) { div.innerHTML = '<span class="muted">Sin datos en el rango.</span>'; return; }
+  const inicio = pts[0];
+  const fin = pts[pts.length-1];
+  const variacion = inicio > 0 ? (fin - inicio) / inicio * 100 : null;
+  div.innerHTML = `
+    <div class="var-bloque">
+      <div class="l">Valor al inicio del rango</div>
+      <div class="v">US$ ${fmt4(inicio)}</div>
+    </div>
+    <div class="var-bloque">
+      <div class="l">Valor actual</div>
+      <div class="v">US$ ${fmt4(fin)}</div>
+    </div>
+    <div class="var-bloque">
+      <div class="l">Variación del rango (USD)</div>
+      <div class="v ${cls(variacion)}">${variacion == null ? '-' : pct(variacion)}</div>
+    </div>`;
+}
+
 function renderPosiciones() {
   const tb = document.querySelector('#tablaPos tbody');
   const filas = data.filas || [];
   if (!filas.length) {
-    tb.innerHTML = '<tr><td colspan="12" class="muted">Aún no tienes posiciones. Registra tu primera compra.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="11" class="muted">Aún no tienes posiciones. Registra compras en "Registros compra/venta".</td></tr>';
     return;
   }
   tb.innerHTML = filas.map(f => `
     <tr>
       <td><b>${f.ticker}</b> <span class="muted">(${fmtFecha(f.ultima_fecha)})</span></td>
       <td>${f.cantidad}</td>
-      <td>${fmt(f.costo_total_bs)}</td>
       <td>${fmt(f.costo_prom_bs)}</td>
       <td>${fmt(f.precio_bs)}</td>
       <td>${fmt4(f.precio_usd)}</td>
@@ -154,77 +233,28 @@ function renderPosiciones() {
       <td class="${cls(f.ganancia_bs)}">${fmt(f.ganancia_bs)}</td>
       <td class="${cls(f.ganancia_usd)}">${fmt4(f.ganancia_usd)}</td>
       <td class="${cls(f.ganancia_pct)}">${pct(f.ganancia_pct)}</td>
-      <td>${f.n_compras}</td>
+      <td>${f.n_compras} / ${f.n_ventas}</td>
     </tr>`).join('');
-}
-
-function renderCompras() {
-  const div = document.getElementById('compras');
-  const compras = (data.compras || []).slice().sort((a,b)=>b.id-a.id);
-  if (!compras.length) {
-    div.innerHTML = '<div class="muted">Sin compras registradas.</div>';
-    return;
-  }
-  div.innerHTML = compras.map(c => `
-    <div class="compra-row">
-      <b>${c.ticker}</b>
-      <span class="muted">${fmtFecha(c.fecha)}</span>
-      <span>${c.cantidad} x Bs ${fmt(c.precio_bs)}</span>
-      <span class="muted">com. ${fmt(c.comision_bs)}</span>
-      ${c.nota ? '<span class="muted">· '+c.nota+'</span>' : ''}
-      <button class="btn danger" data-id="${c.id}">Eliminar</button>
-    </div>`).join('');
-  div.querySelectorAll('.btn.danger').forEach(b => {
-    b.addEventListener('click', async () => {
-      if (!confirm('Eliminar esta compra?')) return;
-      const j = await api('/api/portafolio', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({action:'del_compra', id: Number(b.dataset.id)})
-      });
-      if (j && j.ok) loadData();
-    });
-  });
 }
 
 function render() {
   if (!data) return;
   renderCards();
+  renderEvolucion();
   renderPosiciones();
-  renderCompras();
-  const n = (data.filas||[]).length;
-  document.getElementById('estado').textContent = n + ' posiciones';
-}
-
-async function agregarCompra() {
-  const body = {
-    action:'add_compra',
-    ticker: document.getElementById('fTicker').value.trim(),
-    fecha: document.getElementById('fFecha').value.replace(/-/g,''),
-    cantidad: Number(document.getElementById('fCantidad').value),
-    precio_bs: Number(document.getElementById('fPrecio').value),
-    comision_bs: Number(document.getElementById('fComision').value || 0),
-    nota: document.getElementById('fNota').value.trim(),
-  };
-  if (!body.ticker || !body.cantidad || !body.precio_bs) { alert('Ticker, cantidad y precio son obligatorios.'); return; }
-  const btn = document.getElementById('btnAgregar');
-  btn.disabled = true;
-  const j = await api('/api/portafolio', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(body)
-  });
-  btn.disabled = false;
-  if (!j || !j.ok) { alert('No se pudo registrar la compra.'); return; }
-  ['fTicker','fCantidad','fPrecio','fComision','fNota'].forEach(id => document.getElementById(id).value = '');
-  data = j;
-  render();
+  document.getElementById('estado').textContent = (data.filas||[]).length + ' posiciones';
 }
 
 function init() {
-  loadSimbolos();
+  document.querySelectorAll('.evseg').forEach(b =>
+    b.addEventListener('click', () => setEvMoneda(b.dataset.m))
+  );
+  document.querySelectorAll('.evrango').forEach(b =>
+    b.addEventListener('click', () => setEvRango(b.dataset.rango))
+  );
+  document.getElementById('evDesde').addEventListener('change', setEvRangoCustom);
+  document.getElementById('evHasta').addEventListener('change', setEvRangoCustom);
   loadData();
-  document.getElementById('btnAgregar').addEventListener('click', agregarCompra);
 }
 
 init();
