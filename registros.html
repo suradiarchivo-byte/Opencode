@@ -55,29 +55,19 @@
   <div class="aviso">Registra cada operación de compra o venta. El resumen y la evolución del portafolio se calculan automáticamente desde estos registros en la página <b>Portafolio</b>.</div>
 
   <div class="panel">
-    <h2>Registrar compra</h2>
+    <h2>Registrar operación (compra o venta)</h2>
     <div class="toolbar">
-      <input list="simbolos" id="fTicker" placeholder="Ticker, ej. BVL" style="width:150px">
+      <input list="simbolos" id="oTicker" placeholder="Ticker, ej. BVL" style="width:150px">
       <datalist id="simbolos"></datalist>
-      <input type="date" id="fFecha">
-      <input type="number" id="fCantidad" placeholder="Cantidad" min="0" step="any" style="width:110px">
-      <input type="number" id="fPrecio" placeholder="Precio Bs" min="0" step="any" style="width:120px">
-      <input type="number" id="fComision" placeholder="Comisión Bs" min="0" step="any" style="width:120px">
-      <input type="text" id="fNota" placeholder="Nota (opcional)" style="width:180px">
-      <button class="btn green" id="btnAgregar">Agregar compra</button>
+      <input type="date" id="oFecha">
+      <input type="number" id="oCantidad" placeholder="Cantidad" min="0" step="any" style="width:110px">
+      <input type="number" id="oPrecio" placeholder="Precio Bs" min="0" step="any" style="width:120px">
+      <input type="number" id="oComision" placeholder="Comisión Bs" min="0" step="any" style="width:120px">
+      <input type="text" id="oNota" placeholder="Nota (opcional)" style="width:180px">
     </div>
-  </div>
-
-  <div class="panel">
-    <h2>Registrar venta</h2>
     <div class="toolbar">
-      <input list="simbolos" id="vTicker" placeholder="Ticker, ej. BVL" style="width:150px">
-      <input type="date" id="vFecha">
-      <input type="number" id="vCantidad" placeholder="Cantidad" min="0" step="any" style="width:110px">
-      <input type="number" id="vPrecio" placeholder="Precio Bs" min="0" step="any" style="width:120px">
-      <input type="number" id="vComision" placeholder="Comisión Bs" min="0" step="any" style="width:120px">
-      <input type="text" id="vNota" placeholder="Nota (opcional)" style="width:180px">
-      <button class="btn red" id="btnVender">Agregar venta</button>
+      <button class="btn green" id="btnAgregar">Registrar compra</button>
+      <button class="btn red" id="btnVender">Registrar venta</button>
     </div>
   </div>
 
@@ -86,8 +76,9 @@
     <div class="table-scroll">
       <table id="tablaHist">
         <thead><tr>
-          <th>Tipo</th><th>Ticker</th><th>Fecha</th><th>Cantidad</th><th>Precio Bs</th>
-          <th>Monto Bs</th><th>Comisión Bs</th><th>Nota</th><th></th>
+          <th>Tipo</th><th>Ticker</th><th>Fecha</th><th>Cantidad</th><th>Precio Bs</th><th>Precio USD</th>
+          <th>Monto Bs</th><th>Monto USD</th><th>Comisión Bs</th><th>Comisión USD</th><th>Nota</th>
+          <th>Precio prom. compra</th><th></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -97,6 +88,7 @@
 
 <script>
 const fmt = n => n == null ? '-' : Number(n).toLocaleString('en-US', {maximumFractionDigits:2});
+const fmt4 = n => n == null ? '-' : Number(n).toLocaleString('en-US', {maximumFractionDigits:4});
 const fmtFecha = f => f ? f.slice(0,4)+'-'+f.slice(4,6)+'-'+f.slice(6,8) : '-';
 let simbolos = [], data = null;
 
@@ -121,22 +113,33 @@ function renderHistorial() {
   const compras = (data.compras || []).map(c => ({...c, tipo:'compra'}));
   const ventas = (data.ventas || []).map(v => ({...v, tipo:'venta'}));
   const ops = compras.concat(ventas).sort((a,b) => (b.fecha||'')-(a.fecha||''));
+  const prom = {};
+  (data.filas || []).forEach(f => prom[f.ticker] = f);
   if (!ops.length) {
-    tb.innerHTML = '<tr><td colspan="9" class="muted">Sin operaciones registradas.</td></tr>';
+    tb.innerHTML = '<tr><td colspan="13" class="muted">Sin operaciones registradas.</td></tr>';
     return;
   }
-  tb.innerHTML = ops.map(o => `
+  tb.innerHTML = ops.map(o => {
+    const p = prom[o.ticker];
+    const promBs = p && p.costo_prom_bs != null ? fmt4(p.costo_prom_bs) : '-';
+    const promUsd = p && p.costo_prom_usd != null ? fmt4(p.costo_prom_usd) : '-';
+    return `
     <tr>
       <td><span class="tag ${o.tipo}">${o.tipo === 'compra' ? 'Compra' : 'Venta'}</span></td>
       <td><b>${o.ticker}</b></td>
       <td>${fmtFecha(o.fecha)}</td>
       <td>${o.cantidad}</td>
       <td>${fmt(o.precio_bs)}</td>
-      <td>${fmt((o.cantidad||0) * (o.precio_bs||0))}</td>
+      <td>${fmt4(o.precio_usd)}</td>
+      <td>${fmt(o.monto_bs)}</td>
+      <td>${fmt4(o.monto_usd)}</td>
       <td>${fmt(o.comision_bs)}</td>
+      <td>${fmt4(o.comision_usd)}</td>
       <td class="muted">${o.nota || ''}</td>
+      <td><span class="muted">Bs ${promBs}</span> · <span class="muted">US$ ${promUsd}</span></td>
       <td><button class="btn danger" data-kind="${o.tipo}" data-id="${o.id}">Eliminar</button></td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 function render() {
@@ -147,15 +150,14 @@ function render() {
 }
 
 async function agregar(tipo) {
-  const p = tipo === 'compras' ? 'f' : 'v';
   const body = {
     action: tipo === 'compras' ? 'add_compra' : 'add_venta',
-    ticker: document.getElementById(p+'Ticker').value.trim(),
-    fecha: document.getElementById(p+'Fecha').value.replace(/-/g,''),
-    cantidad: Number(document.getElementById(p+'Cantidad').value),
-    precio_bs: Number(document.getElementById(p+'Precio').value),
-    comision_bs: Number(document.getElementById(p+'Comision').value || 0),
-    nota: document.getElementById(p+'Nota').value.trim(),
+    ticker: document.getElementById('oTicker').value.trim(),
+    fecha: document.getElementById('oFecha').value.replace(/-/g,''),
+    cantidad: Number(document.getElementById('oCantidad').value),
+    precio_bs: Number(document.getElementById('oPrecio').value),
+    comision_bs: Number(document.getElementById('oComision').value || 0),
+    nota: document.getElementById('oNota').value.trim(),
   };
   if (!body.ticker || !body.cantidad || !body.precio_bs) { alert('Ticker, cantidad y precio son obligatorios.'); return; }
   const btn = document.getElementById(tipo === 'compras' ? 'btnAgregar' : 'btnVender');
@@ -167,7 +169,7 @@ async function agregar(tipo) {
   });
   btn.disabled = false;
   if (!j || !j.ok) { alert('No se pudo registrar la operación.'); return; }
-  [p+'Ticker',p+'Cantidad',p+'Precio',p+'Comision',p+'Nota'].forEach(id => document.getElementById(id).value = '');
+  ['oTicker','oCantidad','oPrecio','oComision','oNota'].forEach(id => document.getElementById(id).value = '');
   data = j;
   render();
 }

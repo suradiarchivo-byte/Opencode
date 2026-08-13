@@ -111,6 +111,24 @@ def _fnum(value):
         return None
 
 
+def _enrich_op(op, by_sym, last):
+    sim = op["ticker"]
+    fecha = str(op.get("fecha", ""))
+    p = _fnum(op.get("precio_bs"))
+    com = _fnum(op.get("comision_bs")) or 0
+    q = float(op.get("cantidad", 0) or 0)
+    fila = by_sym.get(sim, {}).get(fecha) if fecha else None
+    tasa = _fnum(fila.get("tasa_bcv")) if fila else None
+    if not tasa and last.get(sim):
+        tasa = _fnum(last[sim].get("tasa_bcv"))
+    res = dict(op)
+    res["precio_usd"] = round(p / tasa, 6) if (p is not None and tasa) else None
+    res["monto_bs"] = round(p * q, 2) if p is not None else None
+    res["monto_usd"] = round(p * q / tasa, 6) if (p is not None and q and tasa) else None
+    res["comision_usd"] = round(com / tasa, 6) if (com and tasa) else None
+    return res
+
+
 def _valoracion():
     last, by_sym = _prices_flat()
     pf = _read_portafolio()
@@ -124,6 +142,7 @@ def _valoracion():
         costo_bs = 0.0
         costo_usd = 0.0
         cant_comprada = 0.0
+        ult = last.get(sim)
         for c in compras_sym:
             q = float(c.get("cantidad", 0) or 0)
             p = _fnum(c.get("precio_bs"))
@@ -132,7 +151,7 @@ def _valoracion():
                 continue
             costo_bs += q * p + com
             cant_comprada += q
-            fila_p = by_sym.get(sim, {}).get(str(c.get("fecha", "")))
+            fila_p = by_sym.get(sim, {}).get(str(c.get("fecha", ""))) or ult
             tasa = _fnum(fila_p.get("tasa_bcv")) if fila_p else None
             if tasa and tasa > 0:
                 costo_usd += (q * p + com) / tasa
@@ -141,7 +160,6 @@ def _valoracion():
                 costo_usd += q * (precio_usd or 0)
         cant_vendida = sum(float(v.get("cantidad", 0) or 0) for v in ventas_sym)
         cantidad = max(0.0, cant_comprada - cant_vendida)
-        ult = last.get(sim)
         precio_bs = _fnum(ult.get("precio_bs")) if ult else None
         precio_usd = _fnum(ult.get("precio_usd")) if ult else None
         tasa = _fnum(ult.get("tasa_bcv")) if ult else None
@@ -165,6 +183,7 @@ def _valoracion():
                 "cantidad": cantidad,
                 "costo_total_bs": round(costo_bs_tenido, 2),
                 "costo_prom_bs": round(costo_prom, 4) if costo_prom is not None else None,
+                "costo_prom_usd": round(costo_prom_usd, 6) if costo_prom_usd is not None else None,
                 "costo_total_usd": round(costo_usd_tenido, 4) if costo_usd_tenido is not None else None,
                 "precio_bs": precio_bs,
                 "precio_usd": precio_usd,
@@ -186,7 +205,12 @@ def _valoracion():
         "ganancia_bs": round(sum(f["ganancia_bs"] for f in filas if f["ganancia_bs"]), 2),
         "ganancia_usd": round(sum(f["ganancia_usd"] for f in filas if f["ganancia_usd"]), 4),
     }
-    return {"filas": filas, "totales": totales, "compras": compras, "ventas": ventas}
+    return {
+        "filas": filas,
+        "totales": totales,
+        "compras": [_enrich_op(c, by_sym, last) for c in compras],
+        "ventas": [_enrich_op(v, by_sym, last) for v in ventas],
+    }
 
 
 def _evolucion():
