@@ -31,6 +31,7 @@
   .panel h2 { margin:0 0 12px; font-size:16px; }
   .charts { display:grid; grid-template-columns:1fr 1fr; gap:22px; }
   .chart-box { position:relative; height:320px; }
+  .chart-box.big { height:520px; }
   @media (max-width:900px){ .charts{ grid-template-columns:1fr; } }
   .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
   input[type=date], select { padding:8px 10px; border:1px solid #cbd5dc; border-radius:8px; font-size:14px; }
@@ -43,6 +44,19 @@
   .table-scroll { max-height:460px; overflow:auto; }
   .muted { color:#6b7a86; }
   .tasa { font-size:13px; margin-top:2px; }
+  .btn-link { color:#fff; text-decoration:none; padding:6px 12px; border-radius:8px; font-size:13px;
+              border:1px solid rgba(255,255,255,.35); }
+  .btn-link:hover { background:rgba(255,255,255,.15); }
+  #capTreemap { position:relative; width:100%; height:100%; }
+  #capTreemap .tile { position:absolute; overflow:hidden; border-radius:6px; display:flex;
+             flex-direction:column; justify-content:center; align-items:center; color:#fff;
+             cursor:pointer; font-size:11px; box-shadow:0 1px 2px rgba(0,0,0,.15); }
+  #capTreemap .tile .t-sym { font-weight:700; font-size:12px; }
+  #capTreemap .tile .t-pct { opacity:.92; margin-top:2px; }
+  #capTreemap .tile:hover { z-index:5; outline:2px solid rgba(255,255,255,.7); }
+  #capLegend { display:flex; gap:16px; align-items:center; font-size:12px; color:#6b7a86; margin-top:8px; flex-wrap:wrap; }
+  #capLegend .lg { display:flex; align-items:center; gap:6px; }
+  #capLegend .sw { width:14px; height:14px; border-radius:3px; }
 </style>
 </head>
 <body>
@@ -54,10 +68,13 @@
     <a href="/noticias">Noticias</a>
     <a href="/portafolio">Portafolio</a>
     <a href="/registros">Registros</a>
+    <a href="/cuenta">Mi cuenta</a>
   </nav>
   <div class="hdr-right">
     <span id="ultimaFecha" class="sub"></span>
+    <span class="sub" id="userNombre"></span>
     <button id="btnActualizar">Actualizar</button>
+    <a href="/logout" class="btn-link" title="Cerrar sesion">Salir</a>
   </div>
 </header>
 <main>
@@ -76,33 +93,26 @@
       <span class="muted">Hasta</span>
       <input type="date" id="idxHasta">
     </div>
-    <div class="panel">
-      <h2>Índice General
+    <div class="panel" style="grid-column:1/-1">
+      <h2>Índices: General, Financiero e Industrial
         <span style="float:right">
           <button class="seg idxseg active" data-m="bs">Bs</button>
           <button class="seg idxseg" data-m="usd">USD</button>
         </span>
       </h2>
-      <div class="chart-box"><canvas id="chartIG"></canvas></div>
-    </div>
-    <div class="panel">
-      <h2>Financiero e Industrial
-        <span style="float:right">
-          <button class="seg idxseg active" data-m="bs">Bs</button>
-          <button class="seg idxseg" data-m="usd">USD</button>
-        </span>
-      </h2>
-      <div class="chart-box"><canvas id="chartFI"></canvas></div>
+      <div class="chart-box big"><canvas id="chartIndices"></canvas></div>
     </div>
   </div>
 
   <div class="panel">
     <h2>Gráfica por ticker (Bs / USD)</h2>
     <div class="toolbar">
-      <input list="simbolos" id="simbolo" placeholder="Escribir símbolo, ej. BVL" style="width:250px">
-      <datalist id="simbolos"></datalist>
+      <select id="simbolo" style="width:340px">
+        <option value="">— Selecciona un ticker —</option>
+      </select>
       <button id="btnBs" class="seg active">Bs</button>
       <button id="btnUsd" class="seg">USD</button>
+      <button id="btnBB" class="seg" title="Activar/desactivar bandas de Bollinger">Bollinger: ON</button>
       <span id="tickerInfo" class="muted"></span>
     </div>
     <div class="toolbar">
@@ -116,7 +126,16 @@
       <span class="muted">Hasta</span>
       <input type="date" id="rangoHasta">
     </div>
-    <div class="chart-box" style="height:380px"><canvas id="chartTicker"></canvas></div>
+    <div class="chart-box" style="height:460px"><canvas id="chartTicker"></canvas></div>
+    <div id="tickerInfoPanel" style="margin-top:16px; display:none">
+      <h3 style="margin:0 0 2px; font-size:15px;">Datos del emisor (BVC)</h3>
+      <div id="tickerInfoNombre" style="font-size:13px; color:#6b7a86; margin-bottom:10px;"></div>
+      <div id="tickerInfoCards" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; margin-bottom:14px;"></div>
+      <div id="tickerInfoLibro" style="margin-bottom:14px;"></div>
+      <div id="tickerInfoSesion" class="chart-box" style="height:220px; margin-bottom:14px;"></div>
+      <h3 style="margin:0 0 8px; font-size:14px;">Ajustes de precio / beneficios</h3>
+      <div id="tickerInfoAjustes" class="table-scroll" style="max-height:260px; overflow:auto;"></div>
+    </div>
   </div>
 
   <div class="panel">
@@ -136,14 +155,49 @@
       </table>
     </div>
   </div>
+
+  <div class="panel">
+    <h2>Capitalización bursátil de toda la bolsa (USD)
+      <span style="float:right">
+        <button class="seg capfiltro active" data-f="todas">Todas</button>
+        <button class="seg capfiltro" data-f="top15">Top 15</button>
+      </span>
+    </h2>
+    <div class="chart-box big"><div id="capTreemap"></div></div>
+    <div id="capLegend">
+      <span class="lg"><span class="sw" style="background:rgba(26,160,60,.8)"></span>Sube</span>
+      <span class="lg"><span class="sw" style="background:rgba(200,40,40,.8)"></span>Baja</span>
+      <span class="lg"><span class="sw" style="background:#8a97a5"></span>Sin cambio</span>
+      <span class="lg"><span class="sw" style="background:#5b6b7a"></span>Sin cotización del día</span>
+    </div>
+  </div>
 </main>
 
 <script>
-const fmt = n => n == null ? '-' : Number(n).toLocaleString('en-US', {maximumFractionDigits:2});
-const pct = n => n == null ? '-' : (n>0?'+':'') + Number(n).toFixed(2) + '%';
+const fmtNum = (n, dec) => {
+  if (n == null || isNaN(n)) return '-';
+  const neg = n < 0 ? '-' : '';
+  const x = Math.abs(n).toFixed(dec);
+  const i = x.indexOf('.');
+  const int = (i >= 0 ? x.slice(0, i) : x).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const frac = i >= 0 ? ',' + x.slice(i + 1) : '';
+  return neg + int + frac;
+};
+const fmt = n => fmtNum(n, 2);
+const pct = n => n == null ? '-' : (n>0?'+':'') + fmtNum(Math.abs(n), 2) + '%';
 const cls = n => n == null ? 'flat' : (n>0?'pos':(n<0?'neg':'flat'));
-let chartIG=null, chartFI=null, chartTicker=null, series=[], dias=[], fechas=[];
-let preciosCache=null, moneda='bs', simboloActual=null, rango='ytd', idxMoneda='bs', idxRango='todo';
+let chartIndices=null, chartTicker=null, series=[], dias=[], fechas=[];
+let preciosCache=null, moneda='bs', simboloActual=null, nombreActual=null, rango='ytd', idxMoneda='bs', idxRango='todo';
+let bbOn = true;
+let infoDetalle = null, splitMarkers = [];
+
+function fechaBVC(s) {
+  if (!s) return null;
+  const m = String(s).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (!m) return null;
+  const aaaa = m[3].length === 2 ? '20'+m[3] : m[3];
+  return aaaa + m[2].padStart(2,'0') + m[1].padStart(2,'0');
+}
 
 function isoF(d) {
   return String(d.getFullYear())+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
@@ -192,20 +246,15 @@ function renderCharts() {
   const ig = s.map(r => r.general ? (idxMoneda==='bs' ? Number(r.general) : Number(r.general_usd)) : null);
   const fi = s.map(r => r.financiero ? (idxMoneda==='bs' ? Number(r.financiero) : Number(r.financiero_usd)) : null);
   const ii = s.map(r => r.industrial ? (idxMoneda==='bs' ? Number(r.industrial) : Number(r.industrial_usd)) : null);
-  if (chartIG) chartIG.destroy();
-  chartIG = new Chart(document.getElementById('chartIG'), {
-    type:'line',
-    data:{labels, datasets:[{data:ig, borderColor:'#1a7a3c', backgroundColor:'rgba(26,122,60,.08)', fill:true, tension:.2, pointRadius:1, spanGaps:true}]},
-    options:{plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>v.toLocaleString()}}, x:{ticks:{maxTicksLimit:12}}}, maintainAspectRatio:false}
-  });
-  if (chartFI) chartFI.destroy();
-  chartFI = new Chart(document.getElementById('chartFI'), {
+  if (chartIndices) chartIndices.destroy();
+  chartIndices = new Chart(document.getElementById('chartIndices'), {
     type:'line',
     data:{labels, datasets:[
+      {data:ig, label:'General', borderColor:'#1a7a3c', tension:.2, pointRadius:1, spanGaps:true},
       {data:fi, label:'Financiero', borderColor:'#2f7ed8', tension:.2, pointRadius:1, spanGaps:true},
       {data:ii, label:'Industrial', borderColor:'#e67e22', tension:.2, pointRadius:1, spanGaps:true}
     ]},
-    options:{scales:{y:{ticks:{callback:v=>v.toLocaleString()}}, x:{ticks:{maxTicksLimit:12}}}, maintainAspectRatio:false}
+    options:{plugins:{legend:{position:'top'}}, scales:{y:{ticks:{callback:v=>fmtNum(v,0)}}, x:{ticks:{maxTicksLimit:12}}}, maintainAspectRatio:false}
   });
 }
 
@@ -259,8 +308,11 @@ async function loadSimbolos() {
   const r = await fetch('/api/simbolos');
   if (!r.ok) return;
   const j = await r.json();
-  document.getElementById('simbolos').innerHTML =
-    j.simbolos.map(s => '<option value="'+s+'"></option>').join('');
+  const sel = document.getElementById('simbolo');
+  sel.innerHTML = '<option value="">— Selecciona un ticker —</option>' +
+    j.simbolos.map(s =>
+      '<option value="'+s.simbolo+'">'+s.simbolo+' — '+(s.nombre||'')+'</option>'
+    ).join('');
 }
 
 async function loadSerie(sim) {
@@ -269,6 +321,67 @@ async function loadSerie(sim) {
   return (await r.json()).serie;
 }
 
+function bollinger(data, period, mult) {
+  const out = [];
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1 || data[i] == null) { out.push(null); continue; }
+    const win = data.slice(i - period + 1, i + 1);
+    const valid = win.filter(v => v != null);
+    if (valid.length < period) { out.push(null); continue; }
+    const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
+    const variance = valid.reduce((a, b) => a + (b - mean) * (b - mean), 0) / valid.length;
+    const sd = Math.sqrt(variance);
+    out.push([mean - mult * sd, mean, mean + mult * sd]);
+  }
+  return out;
+}
+
+function ajustarSerie(serie, key) {
+  const eventos = [];
+  (infoDetalle && infoDetalle.beneficios || []).forEach(b => {
+    const acc = b.ACCIONES != null ? Number(b.ACCIONES) : null;
+    if (!acc || acc <= 0) return;
+    const corte = fechaBVC(b.FEREG) || fechaBVC(b.FEPAG) || fechaBVC(b.FEJUN);
+    if (corte) eventos.push({corte, factor: 1 + acc, desc: b});
+  });
+  const data = serie.map((x, i) => {
+    const v = x[key] != null ? Number(x[key]) : null;
+    if (v == null) return null;
+    let f = 1;
+    eventos.forEach(e => { if (x.fecha <= e.corte) f *= e.factor; });
+    return f > 1 ? v / f : v;
+  });
+  splitMarkers = eventos.map(e => ({
+    corte: e.corte,
+    factor: e.factor,
+    desc: 'Ajuste por beneficio en acciones ×' + e.factor
+  }));
+  return data;
+}
+
+const nubePlugin = {
+  id: 'nubes',
+  afterDatasetsDraw(chart) {
+    if (!splitMarkers.length) return;
+    const labels = chart.data.labels || [];
+    const meta = chart.getDatasetMeta(0);
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.font = '15px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = 'rgba(90,120,200,.95)';
+    splitMarkers.forEach(m => {
+      const idx = labels.indexOf(m.corte);
+      if (idx < 0) return;
+      const pt = meta.data[idx];
+      if (!pt || pt.x == null || pt.y == null) return;
+      ctx.fillText('☁', pt.x, pt.y - 8);
+    });
+    ctx.restore();
+  }
+};
+
 function renderTicker() {
   if (!simboloActual || !preciosCache) return;
   const dsel = document.getElementById('rangoDesde').value.replace(/-/g,'');
@@ -276,22 +389,41 @@ function renderTicker() {
   const serie = preciosCache.filter(x => (!dsel || x.fecha >= dsel) && (!hsel || x.fecha <= hsel));
   const labels = serie.map(x => x.fecha);
   const key = moneda === 'bs' ? 'precio_bs' : 'precio_usd';
-  const data = serie.map(x => x[key] != null ? Number(x[key]) : null);
+  const data = ajustarSerie(serie, key);
   const vols = serie.map(x => x.monto != null ? Number(x.monto) : null);
+  const volCols = serie.map(x => 'rgba(135,186,230,.6)');
+  const bb = bollinger(data, 20, 2);
+  const bbLower = bb.map(p => p ? p[0] : null);
+  const bbMid = bb.map(p => p ? p[1] : null);
+  const bbUpper = bb.map(p => p ? p[2] : null);
   if (chartTicker) chartTicker.destroy();
+  const datasets = [
+    {type:'line', data, label: (moneda==='bs' ? 'Cierre Bs' : 'Cierre USD') + (splitMarkers.length ? ' (ajust. splits)' : ''),
+     borderColor:'#1a7a3c', backgroundColor:'rgba(26,122,60,.08)', fill:true,
+     tension:.2, pointRadius:0, spanGaps:false, yAxisID:'y'}
+  ];
+  if (bbOn) {
+    datasets.push(
+      {type:'line', data:bbUpper, label:'Banda sup (BB 20,2)',
+       borderColor:'rgba(198,120,221,.55)', borderDash:[4,4], pointRadius:0, spanGaps:false, yAxisID:'y'},
+      {type:'line', data:bbMid, label:'Media móvil 20',
+       borderColor:'rgba(90,120,200,.55)', borderDash:[2,2], pointRadius:0, spanGaps:false, yAxisID:'y'},
+      {type:'line', data:bbLower, label:'Banda inf (BB 20,2)',
+       borderColor:'rgba(198,120,221,.55)', borderDash:[4,4], pointRadius:0, spanGaps:false, yAxisID:'y'}
+    );
+  }
+  datasets.push(
+    {type:'bar', data:vols, label:'Monto Bs', backgroundColor:volCols, yAxisID:'y1'}
+  );
   chartTicker = new Chart(document.getElementById('chartTicker'), {
-    data: {labels, datasets: [
-      {type:'line', data, label: moneda==='bs' ? 'Cierre Bs' : 'Cierre USD',
-       borderColor:'#1a7a3c', backgroundColor:'rgba(26,122,60,.08)', fill:true,
-       tension:.2, pointRadius:0, spanGaps:false, yAxisID:'y'},
-      {type:'bar', data:vols, label:'Monto Bs', backgroundColor:'rgba(47,126,216,.18)', yAxisID:'y1'}
-    ]},
+    data: {labels, datasets},
+    plugins: [nubePlugin],
     options: {
       maintainAspectRatio:false,
       interaction:{mode:'index', intersect:false},
       scales:{
-        y:{position:'left', ticks:{callback:v=>v.toLocaleString()}},
-        y1:{position:'right', grid:{drawOnChartArea:false}, ticks:{callback:v=>v.toLocaleString()}}
+        y:{position:'left', ticks:{callback:v=>fmtNum(v,0)}},
+        y1:{position:'right', grid:{drawOnChartArea:false}, ticks:{callback:v=>fmtNum(v,0)}}
       },
       plugins:{legend:{labels:{boxWidth:12}}, tooltip:{mode:'index', intersect:false}}
     }
@@ -302,9 +434,9 @@ function renderTicker() {
   const v2 = ant && ant[key] != null ? Number(ant[key]) : null;
   const d = (v!=null && v2!=null && v2!==0) ? (v-v2)/v2*100 : null;
   const dec = moneda==='bs' ? 2 : 4;
-  let info = '<b>'+simboloActual+'</b> '+(moneda==='bs'?'Bs':'US$')+' '+(v!=null?v.toLocaleString('en-US',{maximumFractionDigits:dec}):'-');
+  let info = '<b>'+simboloActual+'</b>'+(nombreActual ? ' · '+nombreActual : '')+' '+(moneda==='bs'?'Bs':'US$')+' '+(v!=null?fmtNum(v,dec):'-');
   if (d!=null) info += ' <span class="'+cls(d)+'">('+pct(d)+')</span>';
-  if (ult && ult.tasa_bcv != null) info += ' · Tasa BCV '+Number(ult.tasa_bcv).toLocaleString('en-US',{maximumFractionDigits:2});
+  if (ult && ult.tasa_bcv != null) info += ' · Tasa BCV '+fmtNum(ult.tasa_bcv, 2);
   info += ' · '+(ult ? ult.fecha : '')+' · '+serie.length+' sesiones';
   document.getElementById('tickerInfo').innerHTML = info;
 }
@@ -314,8 +446,90 @@ async function selectTicker(sim) {
   const serie = await loadSerie(sim);
   if (!serie) return;
   simboloActual = sim;
+  const opt = [...document.querySelectorAll('#simbolo option')].find(o => o.value === sim);
+  nombreActual = opt ? (opt.textContent.split('—')[1] || '').trim() : '';
   preciosCache = serie;
+  try {
+    const r = await fetch('/api/simbolo_detalle?simbolo='+encodeURIComponent(sim));
+    infoDetalle = r.ok ? await r.json() : null;
+  } catch (e) { infoDetalle = null; }
+  renderTickerInfo();
   setRango(rango);
+}
+
+function renderTickerInfo() {
+  const panel = document.getElementById('tickerInfoPanel');
+  if (!infoDetalle) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  const d = infoDetalle;
+  document.getElementById('tickerInfoNombre').textContent = d.descripcion || '';
+  const cards = document.getElementById('tickerInfoCards');
+  const mm = n => { const v = Number(n); return isNaN(v) ? '-' : fmtNum(v, 0); };
+  const card = (t, v) => '<div style="background:#f7f9fb;border:1px solid #e2e8ef;border-radius:8px;padding:10px 12px;"><div style="font-size:12px;color:#6b7a86;">'+t+'</div><div style="font-weight:600;font-size:14px;margin-top:2px;">'+v+'</div></div>';
+  const mt = n => n != null ? 'Bs '+fmtNum(Number(n), 2) : '-';
+  cards.innerHTML =
+    card('Acciones en circulación', mm(d.acc_circ)) +
+    card('Capitalización (Bs)', d.capitali_bs != null ? 'Bs '+mm(d.capitali_bs)+' MM' : '-') +
+    card('Capitalización (USD)', d.capitali_us != null ? 'US$ '+mm(d.capitali_us/1000000)+' MM' : '-') +
+    card('ISIN', d.isin || '-') +
+    card('Estado', d.estado || '-') +
+    card('Precio', d.precio != null ? fmtNum(Number(d.precio), 2) + ' ' + (d.moneda || '') : '-') +
+    card('Var. sesión', d.var_rel != null ? pct(Number(d.var_rel)) : '-') +
+    card('Max/Mín año', (d.max_ano != null ? mm(d.max_ano) : '-') + ' / ' + (d.min_ano != null ? mm(d.min_ano) : '-')) +
+    card('Vol. día', (d.volumen_dia != null ? fmtNum(Number(d.volumen_dia), 0) : '-') + ' títulos' + (d.nops_dia != null ? ' · '+fmtNum(Number(d.nops_dia), 0)+' ops' : '')) +
+    card('Monto día', mt(d.monto_dia)) +
+    card('Vol. año', (d.volumen_ano != null ? fmtNum(Number(d.volumen_ano), 0) : '-') + ' títulos') +
+    card('Monto año', mt(d.monto_ano));
+
+  renderLibroOrdenes(d.libro_ordenes);
+  renderGrfSesion(d.grf_sesion);
+
+  const ben = (d.beneficios || []).map(b => {
+    const tipo = b.ACCIONES != null ? 'En acciones ' + fmtNum(Number(b.ACCIONES), 4) : (b.EFECTIVO != null ? 'Efectivo ' + fmtNum(Number(b.EFECTIVO), 4) : '-');
+    const fechas = 'Junta ' + (b.FEJUN||'-') + ' · Registro ' + (b.FEREG||'-') + ' · Pago ' + (b.FEPAG||'-');
+    return '<tr><td>'+fechas+'</td><td>'+tipo+'</td><td>'+fmtNum(b.PRECIO_AJUST != null ? Number(b.PRECIO_AJUST) : null, 2)+'</td></tr>';
+  }).join('');
+  document.getElementById('tickerInfoAjustes').innerHTML =
+    '<table><thead><tr><th>Fechas (Junta · Registro · Pago)</th><th>Beneficio</th><th>Precio ajustado</th></tr></thead><tbody>' +
+    (ben || '<tr><td colspan="3" class="muted">Sin beneficios/ajustes recientes</td></tr>') + '</tbody></table>';
+}
+
+function renderLibroOrdenes(lib) {
+  const el = document.getElementById('tickerInfoLibro');
+  if (!el) return;
+  if (!lib) { el.innerHTML = '<div class="muted">Sin libro de órdenes.</div>'; return; }
+  const cmp = [], vta = [];
+  for (let i = 1; i <= 6; i++) {
+    if (lib['PRE_CMP_'+i] != null) cmp.push([lib['PRE_CMP_'+i], lib['VOL_CMP_'+i]]);
+    if (lib['PRE_VTA_'+i] != null) vta.push([lib['PRE_VTA_'+i], lib['VOL_VTA_'+i]]);
+  }
+  const tabla = (pares, color) => {
+    const trs = pares.map(p =>
+      '<tr><td style="text-align:left;color:'+color+'">'+fmtNum(Number(p[0]), 4)+'</td><td style="text-align:right">'+fmtNum(Number(p[1]), 0)+'</td></tr>'
+    ).join('') || '<tr><td colspan="2" class="muted">Sin posturas</td></tr>';
+    return '<table><thead><tr><th>Precio</th><th>Volumen</th></tr></thead><tbody>'+trs+'</tbody></table>';
+  };
+  el.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">' +
+    '<div><h4 style="margin:0 0 6px;font-size:13px;color:#1a7a3c;">Compra (mejor postura)</h4>'+tabla(cmp, '#1a7a3c')+'</div>' +
+    '<div><h4 style="margin:0 0 6px;font-size:13px;color:#c0392b;">Venta</h4>'+tabla(vta, '#c0392b')+'</div>' +
+    '</div>';
+}
+
+let chartSesion = null;
+function renderGrfSesion(sesion) {
+  const el = document.getElementById('tickerInfoSesion');
+  if (!el) return;
+  if (!sesion || !sesion.length) { el.innerHTML = '<div class="muted">Sin gráfico de sesión.</div>'; return; }
+  if (chartSesion) chartSesion.destroy();
+  if (!el.querySelector('canvas')) el.innerHTML = '<canvas></canvas>';
+  const canvas = el.querySelector('canvas');
+  const labels = sesion.map(s => (s.FEC || '').slice(11, 16));
+  const data = sesion.map(s => s.PRECIO != null ? Number(s.PRECIO) : null);
+  chartSesion = new Chart(canvas, {
+    type: 'line',
+    data: {labels, datasets: [{data, borderColor:'#2f7ed8', backgroundColor:'rgba(47,126,216,.12)', fill:true, tension:.25, pointRadius:0}]},
+    options: {plugins:{legend:{display:false}, title:{display:true,text:'Gráfico de la sesión (precio)'}}, scales:{y:{ticks:{callback:v=>fmtNum(v,0)}}, x:{ticks:{maxTicksLimit:10}}}, maintainAspectRatio:false}
+  });
 }
 
 function setMoneda(m) {
@@ -329,6 +543,12 @@ function initTicker() {
   loadSimbolos();
   document.getElementById('btnBs').addEventListener('click', () => setMoneda('bs'));
   document.getElementById('btnUsd').addEventListener('click', () => setMoneda('usd'));
+  document.getElementById('btnBB').addEventListener('click', () => {
+    bbOn = !bbOn;
+    document.getElementById('btnBB').textContent = 'Bollinger: ' + (bbOn ? 'ON' : 'OFF');
+    document.getElementById('btnBB').classList.toggle('active', bbOn);
+    renderTicker();
+  });
   document.querySelectorAll('.rango').forEach(b =>
     b.addEventListener('click', () => setRango(b.dataset.rango))
   );
@@ -336,19 +556,152 @@ function initTicker() {
   const rh = document.getElementById('rangoHasta');
   rd.addEventListener('change', () => setRangoCustom());
   rh.addEventListener('change', () => setRangoCustom());
-  const inp = document.getElementById('simbolo');
-  let timer = null;
-  inp.addEventListener('input', () => {
-    clearTimeout(timer);
-    timer = setTimeout(() => { if (inp.value.trim()) selectTicker(inp.value.trim()); }, 350);
-  });
-  inp.addEventListener('change', () => { if (inp.value.trim()) selectTicker(inp.value.trim()); });
+  const sel = document.getElementById('simbolo');
+  sel.addEventListener('change', () => { if (sel.value) selectTicker(sel.value); });
 }
 
 function setRangoCustom() {
   rango = 'custom';
   document.querySelectorAll('.rango').forEach(b => b.classList.remove('active'));
   renderTicker();
+}
+
+let capSimbolos = [], capFiltro = 'todas';
+
+function capColor(var_rel) {
+  if (var_rel == null) return '#5b6b7a';
+  const v = Number(var_rel);
+  if (v > 0) return 'rgba(26,160,60,.8)';
+  if (v < 0) return 'rgba(200,40,40,.8)';
+  return '#8a97a5';
+}
+
+function squarify(items, x, y, w, h) {
+  // Algoritmo Squarified Treemap (Bruls et al. 2000).
+  // items: [{v, item}] ya ordenados desc por v. Devuelve rects [{item, x, y, w, h}].
+  const total = items.reduce((a, b) => a + b.v, 0) || 1;
+  const scale = (w * h) / total;
+  const data = items.map(d => ({...d, area: d.v * scale}));
+  const out = [];
+  let cx = x, cy = y, cw = w, ch = h;
+
+  const worst = (row, side) => {
+    if (!row.length) return Infinity;
+    const s = row.reduce((a, b) => a + b.area, 0);
+    const rmax = Math.max(...row.map(r => r.area));
+    const rmin = Math.min(...row.map(r => r.area));
+    const sq = s * s;
+    return Math.max((side * side * rmax) / sq, sq / (side * side * rmin));
+  };
+
+  const layoutRow = (row) => {
+    const rowSum = row.reduce((a, b) => a + b.area, 0);
+    if (cw >= ch) {
+      // area mas ancha que alta: columna a la izquierda, ocupa todo el alto ch
+      const width = rowSum / ch;
+      let ry = cy;
+      row.forEach(r => {
+        const rh = r.area / width;
+        out.push({item: r.item, x: cx, y: ry, w: width, h: rh});
+        ry += rh;
+      });
+      cx += width;
+      cw -= width;
+    } else {
+      // area mas alta que ancha: banda arriba, ocupa todo el ancho cw
+      const height = rowSum / cw;
+      let rx = cx;
+      row.forEach(r => {
+        const rw = r.area / height;
+        out.push({item: r.item, x: rx, y: cy, w: rw, h: height});
+        rx += rw;
+      });
+      cy += height;
+      ch -= height;
+    }
+  };
+
+  let i = 0;
+  while (i < data.length) {
+    const row = [];
+    while (i < data.length) {
+      const side = Math.min(cw, ch);
+      row.push(data[i]);
+      i++;
+      if (row.length > 1 && worst(row, side) > worst(row.slice(0, -1), side)) {
+        row.pop();
+        i--;
+        break;
+      }
+    }
+    if (row.length) layoutRow(row);
+  }
+  return out;
+}
+
+function layoutCapGrid(items, W, H) {
+  // items ya vienen ordenados desc por v.
+  // 1) bloque principal (mayor capitalizacion) a la izquierda, ancho proporcional a su valor
+  const total = items.reduce((a, b) => a + b.v, 0) || 1;
+  const out = [];
+  const first = items[0];
+  let leftW = W * (first.v / total);
+  leftW = Math.min(leftW, H * 1.7);
+  leftW = Math.max(leftW, H * 0.6);
+  leftW = Math.max(leftW, W * 0.28);
+  if (items.length > 1) leftW = Math.min(leftW, W * 0.65);
+  out.push({item: first, x: 0, y: 0, w: leftW, h: H});
+  // 2) resto del contenedor: squarify sobre el area derecha, que produce bloques
+  //    rectangulares (aspecto ~1-1.6) y cubre el 100% del area
+  const rest = items.slice(1);
+  if (rest.length) out.push(...squarify(rest.map(it => ({v: it.v, item: it})), leftW, 0, W - leftW, H));
+  return out;
+}
+
+function capTiles(container, items) {
+  const W = container.clientWidth;
+  const H = container.clientHeight;
+  if (!W || !H || !items.length) return;
+  const total = items.reduce((a, b) => a + b.v, 0) || 1;
+  const rects = layoutCapGrid(items, W, H);
+  const pad = 3;
+  container.innerHTML = rects.map(u => {
+    const w = Math.max(0, u.w - pad);
+    const h = Math.max(0, u.h - pad);
+    const color = capColor(u.item.var_rel);
+    const showText = w >= 60 && h >= 44;
+    const inner = showText
+      ? `<span class="t-sym">${u.item.simbolo}</span><span class="t-pct">${fmtNum(u.item.v / total * 100, 1)}% · ${pct(u.item.var_rel)}</span>`
+      : (w >= 30 && h >= 22 ? `<span class="t-sym">${u.item.simbolo}</span>` : '');
+    return `<div class="tile" style="left:${u.x}px;top:${u.y}px;width:${w}px;height:${h}px;background:${color};" data-sim="${u.item.simbolo}" title="${u.item.simbolo} — ${fmtNum(u.item.v / 1e6, 1)} MM USD (${fmtNum(u.item.v / total * 100, 1)}%) · ${pct(u.item.var_rel)}">${inner}</div>`;
+  }).join('');
+  container.querySelectorAll('.tile[data-sim]').forEach(t =>
+    t.addEventListener('click', () => { const v = t.dataset.sim; if (v) selectTicker(v); })
+  );
+}
+
+async function loadCap() {
+  const r = await fetch('/api/capitalizacion');
+  if (!r.ok) return;
+  capSimbolos = (await r.json()).simbolos || [];
+  renderCap();
+}
+
+function renderCap() {
+  const el = document.getElementById('capTreemap');
+  if (!el) return;
+  let items = capSimbolos
+    .map(it => ({...it, v: it.capitali_us != null ? Number(it.capitali_us) : 0}))
+    .filter(it => it.v > 0)
+    .sort((a, b) => b.v - a.v);
+  if (capFiltro === 'top15') items = items.slice(0, 15);
+  capTiles(el, items);
+}
+
+function setCapFiltro(f) {
+  capFiltro = f;
+  document.querySelectorAll('.capfiltro').forEach(b => b.classList.toggle('active', b.dataset.f === f));
+  renderCap();
 }
 
 async function init() {
@@ -364,6 +717,10 @@ async function init() {
   inp.value = fechas[fechas.length-1] || '';
   renderCharts();
   loadEstado();
+  loadCap();
+  document.querySelectorAll('.capfiltro').forEach(b =>
+    b.addEventListener('click', () => setCapFiltro(b.dataset.f))
+  );
   document.querySelectorAll('.idxseg').forEach(b =>
     b.addEventListener('click', () => setIdxMoneda(b.dataset.m))
   );
@@ -404,6 +761,7 @@ async function init() {
   inp.addEventListener('change', sel);
   await sel();
   initTicker();
+  window.addEventListener('resize', () => renderCap());
 }
 
 async function loadEstado() {
@@ -413,6 +771,7 @@ async function loadEstado() {
     const j = await r.json();
     document.getElementById('ultimaFecha').textContent =
       'Última fecha: ' + (j.ultima_fecha || '-') + ' · ' + j.dias + ' días';
+    if (j.usuario) document.getElementById('userNombre').textContent = '👤 ' + j.usuario;
   } catch (e) {}
 }
 

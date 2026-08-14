@@ -37,6 +37,9 @@
   .tag.compra { background:#e3f4e9; color:#1a7a3c; }
   .tag.venta { background:#fdeaea; color:#c0392b; }
   .aviso { background:#fff8e1; border:1px solid #f0e0a0; border-radius:8px; padding:10px 14px; font-size:13px; margin-bottom:18px; color:#7a6a1e; }
+  .btn-link { color:#fff; text-decoration:none; padding:6px 12px; border-radius:8px; font-size:13px;
+              border:1px solid rgba(255,255,255,.35); }
+  .btn-link:hover { background:rgba(255,255,255,.15); }
 </style>
 </head>
 <body>
@@ -48,16 +51,26 @@
     <a href="/noticias">Noticias</a>
     <a href="/portafolio">Portafolio</a>
     <a href="/registros" class="active">Registros compra/venta</a>
+    <a href="/cuenta">Mi cuenta</a>
   </nav>
-  <div class="hdr-right"><span id="estado" class="sub"></span></div>
+  <div class="hdr-right">
+    <span id="estado" class="sub"></span>
+    <span class="sub" id="userNombre"></span>
+    <a href="/logout" class="btn-link">Salir</a>
+  </div>
 </header>
 <main>
   <div class="aviso">Registra cada operación de compra o venta. El resumen y la evolución del portafolio se calculan automáticamente desde estos registros en la página <b>Portafolio</b>.</div>
+  <div class="panel" id="tarifasInfo" style="display:none;background:#f0f6f3;border:1px solid #d7e6dc;">
+    <h2 style="margin:0 0 6px;">Tarifas de tu casa de bolsa</h2>
+    <div id="tarifasTexto" style="font-size:13px;color:#1a7a3c;"></div>
+  </div>
 
   <div class="panel">
     <h2>Registrar operación (compra o venta)</h2>
     <div class="toolbar">
       <input list="simbolos" id="oTicker" placeholder="Ticker, ej. BVL" style="width:150px">
+      <span id="oNombre" class="muted" style="min-width:180px"></span>
       <datalist id="simbolos"></datalist>
       <input type="date" id="oFecha">
       <input type="number" id="oCantidad" placeholder="Cantidad" min="0" step="any" style="width:110px">
@@ -68,6 +81,7 @@
     <div class="toolbar">
       <button class="btn green" id="btnAgregar">Registrar compra</button>
       <button class="btn red" id="btnVender">Registrar venta</button>
+      <span class="muted" id="calcPreview"></span>
     </div>
   </div>
 
@@ -87,24 +101,85 @@
 </main>
 
 <script>
-const fmt = n => n == null ? '-' : Number(n).toLocaleString('en-US', {maximumFractionDigits:2});
-const fmt4 = n => n == null ? '-' : Number(n).toLocaleString('en-US', {maximumFractionDigits:4});
+const fmtNum = (n, dec) => {
+  if (n == null || isNaN(n)) return '-';
+  const neg = n < 0 ? '-' : '';
+  const x = Math.abs(n).toFixed(dec);
+  const i = x.indexOf('.');
+  const int = (i >= 0 ? x.slice(0, i) : x).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const frac = i >= 0 ? ',' + x.slice(i + 1) : '';
+  return neg + int + frac;
+};
+const fmt = n => fmtNum(n, 2);
+const fmt4 = n => fmtNum(n, 4);
 const fmtFecha = f => f ? f.slice(0,4)+'-'+f.slice(4,6)+'-'+f.slice(6,8) : '-';
-let simbolos = [], data = null;
+let simbolos = [], data = null, perfil = null, simboloNombres = {};
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
   return r.ok ? r.json() : null;
 }
 
+async function loadPerfil() {
+  perfil = await api('/api/perfil');
+  const div = document.getElementById('tarifasInfo');
+  if (!perfil || !perfil.casa_cambio) { div.style.display = 'none'; return; }
+  const f = n => n == null || n === '' ? '—' : fmtNum(Number(n), 2);
+  div.style.display = 'block';
+  const v = perfil.der_reg_umbral > 0
+    ? `≤ Bs ${f(perfil.der_reg_umbral)} → Bs ${f(perfil.der_reg_fijo)} · &gt; Bs ${f(perfil.der_reg_umbral)} → ${f(perfil.der_reg_pct)}%`
+    : 'Sin derecho de registro configurado';
+  document.getElementById('tarifasTexto').innerHTML =
+    `<b>${perfil.casa_cambio}</b> · Comisión ${f(perfil.comision_pct)}% · IVA ${f(perfil.iva_pct)}% · Derecho de registro: ${v}.` +
+    ` <span class="muted">(edítalo en Mi cuenta)</span>`;
+  recalcComision();
+}
+
+function recalcComision() {
+  const cant = Number(document.getElementById('oCantidad').value || 0);
+  const precio = Number(document.getElementById('oPrecio').value || 0);
+  const preview = document.getElementById('calcPreview');
+  const comEl = document.getElementById('oComision');
+  if (!perfil || !perfil.comision_pct || cant <= 0 || precio <= 0) {
+    preview.textContent = '';
+    return;
+  }
+  const monto = cant * precio;
+  const comision = monto * (Number(perfil.comision_pct) / 100);
+  const iva = comision * (Number(perfil.iva_pct || 0) / 100);
+  let derecho = 0;
+  const umbral = Number(perfil.der_reg_umbral || 0);
+  if (umbral > 0) {
+    derecho = monto <= umbral
+      ? Number(perfil.der_reg_fijo || 0)
+      : monto * (Number(perfil.der_reg_pct || 0) / 100);
+  }
+  const total = comision + iva + derecho;
+  comEl.value = Math.round(total * 100) / 100;
+  preview.innerHTML =
+    `Comisión ${fmtNum(comision,2)} + IVA ${fmtNum(iva,2)} + Derecho ${fmtNum(derecho,2)} ` +
+    `<b>= Bs ${fmtNum(total,2)}</b>`;
+}
+
 async function loadSimbolos() {
   const j = await api('/api/simbolos');
-  simbolos = (j && j.simbolos) || [];
-  document.getElementById('simbolos').innerHTML = simbolos.map(s => '<option value="'+s+'"></option>').join('');
+  const arr = (j && j.simbolos) || [];
+  const norm = x => typeof x === 'string' ? {simbolo: x, nombre: ''} : x || {};
+  const mapa = {};
+  arr.forEach(x => { const o = norm(x); if (o.simbolo) mapa[o.simbolo.toUpperCase()] = o.nombre || ''; });
+  simbolos = Object.keys(mapa).sort();
+  simboloNombres = mapa;
+  document.getElementById('simbolos').innerHTML = simbolos.map(s =>
+    '<option value="' + s + '">' + s + (mapa[s] ? ' — ' + mapa[s] : '') + '</option>'
+  ).join('');
 }
 
 async function loadData() {
   data = await api('/api/portafolio');
+  if (data) {
+    const est = await api('/api/estado');
+    if (est && est.usuario) document.getElementById('userNombre').textContent = '👤 ' + est.usuario;
+  }
   render();
 }
 
@@ -152,7 +227,7 @@ function render() {
 async function agregar(tipo) {
   const body = {
     action: tipo === 'compras' ? 'add_compra' : 'add_venta',
-    ticker: document.getElementById('oTicker').value.trim(),
+    ticker: document.getElementById('oTicker').value.trim().toUpperCase(),
     fecha: document.getElementById('oFecha').value.replace(/-/g,''),
     cantidad: Number(document.getElementById('oCantidad').value),
     precio_bs: Number(document.getElementById('oPrecio').value),
@@ -170,6 +245,7 @@ async function agregar(tipo) {
   btn.disabled = false;
   if (!j || !j.ok) { alert('No se pudo registrar la operación.'); return; }
   ['oTicker','oCantidad','oPrecio','oComision','oNota'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('calcPreview').textContent = '';
   data = j;
   render();
 }
@@ -177,8 +253,16 @@ async function agregar(tipo) {
 function init() {
   loadSimbolos();
   loadData();
+  loadPerfil();
   document.getElementById('btnAgregar').addEventListener('click', () => agregar('compras'));
   document.getElementById('btnVender').addEventListener('click', () => agregar('ventas'));
+  const tkr = document.getElementById('oTicker');
+  tkr.addEventListener('input', () => {
+    const t = tkr.value.trim().toUpperCase();
+    document.getElementById('oNombre').textContent = simboloNombres[t] ? t + ' — ' + simboloNombres[t] : '';
+  });
+  document.getElementById('oCantidad').addEventListener('input', recalcComision);
+  document.getElementById('oPrecio').addEventListener('input', recalcComision);
   document.getElementById('tablaHist').addEventListener('click', async e => {
     const b = e.target.closest('.btn.danger[data-kind]');
     if (!b) return;

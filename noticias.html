@@ -26,6 +26,9 @@
   .noticia .texto { white-space:pre-wrap; font-size:13.5px; color:#3a4a58; line-height:1.55; }
   .vacias { text-align:center; color:#6b7a86; padding:40px; }
   .muted { color:#6b7a86; }
+  .btn-link { color:#fff; text-decoration:none; padding:6px 12px; border-radius:8px; font-size:13px;
+              border:1px solid rgba(255,255,255,.35); }
+  .btn-link:hover { background:rgba(255,255,255,.15); }
 </style>
 </head>
 <body>
@@ -37,8 +40,13 @@
     <a href="/noticias" class="active">Noticias</a>
     <a href="/portafolio">Portafolio</a>
     <a href="/registros">Registros</a>
+    <a href="/cuenta">Mi cuenta</a>
   </nav>
-  <div class="hdr-right"><span id="estado" class="sub"></span></div>
+  <div class="hdr-right">
+    <span id="estado" class="sub"></span>
+    <span class="sub" id="userNombre"></span>
+    <a href="/logout" class="btn-link">Salir</a>
+  </div>
 </header>
 <main>
   <div class="toolbar">
@@ -63,6 +71,11 @@ async function cargar() {
     noticias = j.noticias || [];
     document.getElementById('estado').textContent = noticias.length + ' noticias';
   } catch (e) { noticias = []; }
+  try {
+    const e = await fetch('/api/estado');
+    const je = await e.json();
+    if (je.usuario) document.getElementById('userNombre').textContent = '👤 ' + je.usuario;
+  } catch (e2) {}
 }
 
 function render() {

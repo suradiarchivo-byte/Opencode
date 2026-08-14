@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Registro - BVC Monitor</title>
+<style>
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:'Segoe UI',system-ui,sans-serif; background:#12202b; color:#22303c;
+         display:flex; align-items:center; justify-content:center; min-height:100vh; }
+  .card { background:#fff; border-radius:12px; padding:32px; width:380px; max-width:92vw;
+          box-shadow:0 8px 30px rgba(0,0,0,.25); }
+  .card h1 { margin:0 0 4px; font-size:22px; color:#12202b; }
+  .card .sub { margin:0 0 20px; color:#6b7a86; font-size:14px; }
+  label { display:block; font-size:13px; font-weight:600; margin:12px 0 4px; }
+  input[type=email], input[type=password], input[type=text] { width:100%; padding:10px 12px;
+          border:1px solid #cbd5dc; border-radius:8px; font-size:14px; }
+  button { width:100%; padding:11px; border:0; border-radius:8px; font-size:15px; font-weight:600;
+          cursor:pointer; }
+  .btn-main { background:#1a7a3c; color:#fff; margin-top:18px; }
+  .btn-main:hover { background:#14652f; }
+  .err { background:#fdecea; color:#c0392b; padding:10px 12px; border-radius:8px; font-size:13px;
+         margin-bottom:12px; }
+  .foot { margin-top:16px; font-size:13px; text-align:center; color:#6b7a86; }
+  .foot a { color:#1a7a3c; text-decoration:none; font-weight:600; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Crea tu cuenta</h1>
+    <p class="sub">Cada usuario tiene su propia cartera.</p>
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <form method="post">
+      <label>Nombre</label>
+      <input type="text" name="nombre" value="{{ nombre or '' }}">
+      <label>Correo</label>
+      <input type="email" name="email" value="{{ email or '' }}" required autofocus>
+      <label>Contraseña</label>
+      <input type="password" name="password" required>
+      <label>Repetir contraseña</label>
+      <input type="password" name="confirm" required>
+      <button class="btn-main" type="submit">Registrarme</button>
+    </form>
+    <div class="foot">¿Ya tienes cuenta? <a href="/login">Inicia sesión</a></div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BVC Monitor - Mi cuenta</title>
+<style>
+  :root { --dark:#12202b; --green:#1a7a3c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:'Segoe UI',system-ui,sans-serif; background:#f3f5f7; color:#22303c; }
+  header { background:var(--dark); color:#fff; padding:16px 28px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:20px; }
+  header .sub { opacity:.75; font-size:13px; }
+  .nav-links { display:flex; gap:6px; margin-left:14px; }
+  .nav-links a { color:#fff; text-decoration:none; padding:6px 12px; border-radius:8px; font-size:14px; opacity:.8; }
+  .nav-links a:hover { background:rgba(255,255,255,.12); opacity:1; }
+  .nav-links a.active { background:rgba(255,255,255,.18); opacity:1; }
+  .hdr-right { margin-left:auto; display:flex; align-items:center; gap:12px; }
+  .btn-link { color:#fff; text-decoration:none; padding:6px 12px; border-radius:8px; font-size:13px;
+              border:1px solid rgba(255,255,255,.35); }
+  .btn-link:hover { background:rgba(255,255,255,.15); }
+  main { max-width:700px; margin:0 auto; padding:22px; }
+  .panel { background:#fff; border-radius:10px; padding:20px; box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:22px; }
+  .panel h2 { margin:0 0 4px; font-size:16px; }
+  .panel .sub { color:#6b7a86; font-size:13px; margin:0 0 16px; }
+  label { display:block; font-size:13px; font-weight:600; margin:12px 0 4px; }
+  input[type=email], input[type=password], input[type=text] { width:100%; padding:10px 12px;
+          border:1px solid #cbd5dc; border-radius:8px; font-size:14px; }
+  input[readonly] { background:#f2f4f6; color:#6b7a86; }
+  .btn { background:var(--dark); color:#fff; border:0; padding:10px 20px; border-radius:8px; cursor:pointer; font-size:14px; margin-top:16px; }
+  .btn:hover { opacity:.9; }
+  .btn.green { background:#20a05b; }
+  .ok { background:#e3f4e9; color:#1a7a3c; padding:10px 12px; border-radius:8px; font-size:13px; margin-bottom:12px; }
+  .err { background:#fdecea; color:#c0392b; padding:10px 12px; border-radius:8px; font-size:13px; margin-bottom:12px; }
+  .muted { color:#6b7a86; font-size:13px; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:10px; font-size:12px; background:#e8eef3; color:#44515c; }
+  select { width:100%; padding:10px 12px; border:1px solid #cbd5dc; border-radius:8px; font-size:14px;
+           background:#fff; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:0 18px; }
+  @media (max-width:560px){ .grid2 { grid-template-columns:1fr; } }
+  .hint { font-size:12px; color:#6b7a86; margin-top:3px; }
+  .calc { background:#f0f6f3; border:1px solid #d7e6dc; border-radius:8px; padding:10px 14px;
+          font-size:13px; color:#1a7a3c; margin-top:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BVC Monitor</h1>
+  <div class="sub">Diario de la Bolsa de Caracas</div>
+  <nav class="nav-links">
+    <a href="/">Inicio</a>
+    <a href="/noticias">Noticias</a>
+    <a href="/portafolio">Portafolio</a>
+    <a href="/registros">Registros compra/venta</a>
+    <a href="/cuenta" class="active">Mi cuenta</a>
+  </nav>
+  <div class="hdr-right">
+    <span class="sub" id="userNombre"></span>
+    <a href="/logout" class="btn-link">Salir</a>
+  </div>
+</header>
+<main>
+  <div class="panel">
+    <h2>Datos personales</h2>
+    <p class="sub">Actualiza tu informacion de perfil.</p>
+    {% if ok %}<div class="ok">{{ ok }}</div>{% endif %}
+    {% if error %}<div class="err">{{ error }}</div>{% endif %}
+    <form method="post">
+      <label>Nombre</label>
+      <input type="text" name="nombre" value="{{ u.nombre or '' }}">
+      <label>Casa de cambio / corredor</label>
+      <select name="casa_cambio" id="casaCambio">
+        {% for c in casas %}
+          <option value="{{ c }}" {% if u.casa_cambio == c %}selected{% endif %}>{{ c }}</option>
+        {% endfor %}
+      </select>
+      <label>Correo</label>
+      <input type="email" value="{{ u.email }}" readonly>
+      <p class="muted">Registrado el {{ u.created_at[:10] }} · <span class="badge">{{ 'Google' if u.auth_provider == 'google' else 'Correo y contrasena' }}</span></p>
+      <button class="btn green" type="submit" name="action" value="perfil">Guardar cambios</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Tarifas de comision</h2>
+    <p class="sub">Estos valores se aplican automaticamente al registrar compras y ventas.</p>
+    <form method="post">
+      <div class="grid2">
+        <div>
+          <label>Comision (% del monto)</label>
+          <input type="number" name="comision_pct" id="comisionPct" step="any" min="0"
+                 value="{{ u.comision_pct or '' }}" placeholder="Ej: 5">
+          <div class="hint">Porcentaje que cobra la casa de bolsa sobre el monto de la operacion.</div>
+        </div>
+        <div>
+          <label>IVA (% sobre la comision)</label>
+          <input type="number" name="iva_pct" id="ivaPct" step="any" min="0"
+                 value="{{ u.iva_pct or '' }}" placeholder="Ej: 16">
+          <div class="hint">Ej: 16% de IVA sobre el valor de la comision.</div>
+        </div>
+        <div>
+          <label>Derecho de registro - umbral (Bs)</label>
+          <input type="number" name="der_reg_umbral" id="derUmbral" step="any" min="0"
+                 value="{{ u.der_reg_umbral or '' }}" placeholder="Ej: 5000">
+          <div class="hint">Monto de operacion que define la tarifa del derecho de registro.</div>
+        </div>
+        <div>
+          <label>Derecho de registro - monto fijo (Bs)</label>
+          <input type="number" name="der_reg_fijo" id="derFijo" step="any" min="0"
+                 value="{{ u.der_reg_fijo or '' }}" placeholder="Ej: 5">
+          <div class="hint">Se aplica cuando la operacion es menor o igual al umbral.</div>
+        </div>
+        <div>
+          <label>Derecho de registro - % del monto</label>
+          <input type="number" name="der_reg_pct" id="derPct" step="any" min="0"
+                 value="{{ u.der_reg_pct or '' }}" placeholder="Ej: 0.01">
+          <div class="hint">Se aplica cuando la operacion supera el umbral.</div>
+        </div>
+      </div>
+      <button class="btn green" type="submit" name="action" value="perfil">Guardar tarifas</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Cambiar contrasena</h2>
+    <p class="sub">Reemplaza tu contrasena actual.</p>
+    {% if error_pw %}<div class="err">{{ error_pw }}</div>{% endif %}
+    {% if ok_pw %}<div class="ok">{{ ok_pw }}</div>{% endif %}
+    <form method="post">
+      <label>Contrasena actual</label>
+      <input type="password" name="pw_actual" required>
+      <label>Nueva contrasena</label>
+      <input type="password" name="pw_nueva" required>
+      <label>Repetir nueva contrasena</label>
+      <input type="password" name="pw_confirm" required>
+      <button class="btn" type="submit" name="action" value="password">Cambiar contrasena</button>
+    </form>
+  </div>
+</main>
+<script>
+fetch('/api/estado').then(r => r.json()).then(j => {
+  if (j.usuario) document.getElementById('userNombre').textContent = '👤 ' + j.usuario;
+}).catch(() => {});
+
+// Al elegir una casa de bolsa, si no hay tarifas, precargar valores por defecto
+const DEFAULTS = {comision_pct:5, iva_pct:16, der_reg_umbral:5000, der_reg_fijo:5, der_reg_pct:0.01};
+document.getElementById('casaCambio').addEventListener('change', e => {
+  if (!e.target.value) return;
+  const prefill = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && el.value === '') el.value = val;
+  };
+  prefill('comisionPct', DEFAULTS.comision_pct);
+  prefill('ivaPct', DEFAULTS.iva_pct);
+  prefill('derUmbral', DEFAULTS.der_reg_umbral);
+  prefill('derFijo', DEFAULTS.der_reg_fijo);
+  prefill('derPct', DEFAULTS.der_reg_pct);
+});
+</script>
+</body>
+</html>

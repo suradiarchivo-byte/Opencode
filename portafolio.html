@@ -46,6 +46,9 @@
   .var-bloque { text-align:center; }
   .var-bloque .v { font-size:26px; font-weight:700; }
   .var-bloque .l { font-size:12px; text-transform:uppercase; color:#6b7a86; letter-spacing:.05em; }
+  .btn-link { color:#fff; text-decoration:none; padding:6px 12px; border-radius:8px; font-size:13px;
+              border:1px solid rgba(255,255,255,.35); }
+  .btn-link:hover { background:rgba(255,255,255,.15); }
 </style>
 </head>
 <body>
@@ -57,8 +60,13 @@
     <a href="/noticias">Noticias</a>
     <a href="/portafolio" class="active">Portafolio</a>
     <a href="/registros">Registros compra/venta</a>
+    <a href="/cuenta">Mi cuenta</a>
   </nav>
-  <div class="hdr-right"><span id="estado" class="sub"></span></div>
+  <div class="hdr-right">
+    <span id="estado" class="sub"></span>
+    <span class="sub" id="userNombre"></span>
+    <a href="/logout" class="btn-link">Salir</a>
+  </div>
 </header>
 <main>
   <div class="aviso" style="background:#fff8e1;border:1px solid #f0e0a0;border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:18px;color:#7a6a1e;">
@@ -106,9 +114,18 @@
 </main>
 
 <script>
-const fmt = n => n == null ? '-' : Number(n).toLocaleString('en-US', {maximumFractionDigits:2});
-const fmt4 = n => n == null ? '-' : Number(n).toLocaleString('en-US', {maximumFractionDigits:4});
-const pct = n => n == null ? '-' : (n>0?'+':'') + Number(n).toFixed(2) + '%';
+const fmtNum = (n, dec) => {
+  if (n == null || isNaN(n)) return '-';
+  const neg = n < 0 ? '-' : '';
+  const x = Math.abs(n).toFixed(dec);
+  const i = x.indexOf('.');
+  const int = (i >= 0 ? x.slice(0, i) : x).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const frac = i >= 0 ? ',' + x.slice(i + 1) : '';
+  return neg + int + frac;
+};
+const fmt = n => fmtNum(n, 2);
+const fmt4 = n => fmtNum(n, 4);
+const pct = n => n == null ? '-' : (n>0?'+':'') + fmtNum(Math.abs(n), 2) + '%';
 const cls = n => n == null ? 'flat' : (n>0?'pos':(n<0?'neg':'flat'));
 const fmtFecha = f => f ? f.slice(0,4)+'-'+f.slice(4,6)+'-'+f.slice(6,8) : '-';
 let data = null, serieEvo = [], chartEvo = null, evMoneda = 'usd', evRango = 'todo';
@@ -126,6 +143,10 @@ async function loadData() {
   data = await api('/api/portafolio');
   const ev = await api('/api/evolucion');
   serieEvo = (ev && ev.serie) || [];
+  if (data) {
+    const est = await api('/api/estado');
+    if (est && est.usuario) document.getElementById('userNombre').textContent = '👤 ' + est.usuario;
+  }
   render();
 }
 
@@ -158,10 +179,12 @@ function setEvRangoCustom() {
 
 function renderCards() {
   const t = data.totales || {};
+  const gtot = (t.ganancia_usd||0) + (t.realizada_usd||0);
+  const gtotBs = (t.ganancia_bs||0) + (t.realizada_bs||0);
   const cards = [
-    {label:'Valor total', value:'US$ '+fmt4(t.valor_usd), delta:'Bs '+fmt(t.valor_bs), c:'flat'},
-    {label:'Invertido (costo)', value:'Bs '+fmt(t.costo_bs), delta:'US$ '+fmt4(t.costo_bs / tasaActual()), c:'flat'},
-    {label:'Ganancia / Pérdida', value:'Bs '+fmt(t.ganancia_bs), delta:'US$ '+fmt4(t.ganancia_usd), c:cls(t.ganancia_bs)},
+    {label:'Valor total', value:'US$ '+fmt(t.valor_usd), delta:'Bs '+fmt(t.valor_bs), c:'flat'},
+    {label:'Aportes (costo)', value:'US$ '+fmt(t.costo_usd), delta:'Bs '+fmt(t.costo_bs), c:'flat'},
+    {label:'Ganancia total', value:'US$ '+fmt(gtot), delta:'Bs '+fmt(gtotBs), c:cls(gtot)},
   ];
   document.getElementById('cards').innerHTML = cards.map(c =>
     `<div class="card"><div class="label">${c.label}</div><div class="value">${c.value}</div><div class="delta ${c.c}">${c.delta}</div></div>`
@@ -185,7 +208,7 @@ function renderEvolucion() {
   chartEvo = new Chart(document.getElementById('chartEvo'), {
     type:'line',
     data:{labels, datasets:[{data:vals, label: evMoneda==='usd'?'Valor USD':'Valor Bs', borderColor:'#1a7a3c', backgroundColor:'rgba(26,122,60,.08)', fill:true, tension:.2, pointRadius:1, spanGaps:true}]},
-    options:{plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>v.toLocaleString('en-US',{maximumFractionDigits:dec})}}, x:{ticks:{maxTicksLimit:12}}}, maintainAspectRatio:false}
+    options:{plugins:{legend:{display:false}}, scales:{y:{ticks:{callback:v=>fmtNum(v,dec)}}, x:{ticks:{maxTicksLimit:12}}}, maintainAspectRatio:false}
   });
   renderVariacion(s);
 }
@@ -202,11 +225,11 @@ function renderVariacion(s) {
   div.innerHTML = `
     <div class="var-bloque">
       <div class="l">Valor al inicio del rango</div>
-      <div class="v">US$ ${fmt4(inicio)}</div>
+      <div class="v">US$ ${fmt(inicio)}</div>
     </div>
     <div class="var-bloque">
       <div class="l">Valor actual</div>
-      <div class="v">US$ ${fmt4(fin)}</div>
+      <div class="v">US$ ${fmt(fin)}</div>
     </div>
     <div class="var-bloque">
       <div class="l">Variación del rango (USD)</div>

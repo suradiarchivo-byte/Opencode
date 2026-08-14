@@ -4,9 +4,11 @@ import json
 import os
 import subprocess
 import sys
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import bvc_api
 import bvc_parse
 from build_prices import PRICES_FIELDS
 from downloader import DATA_DIR, DIARIOS_DIR
@@ -59,6 +61,21 @@ def _read_indices():
         return list(csv.DictReader(fh))
 
 
+def _simbolo_nombres():
+    """Mapa simbolo -> nombre de empresa tomado del diario mas reciente que lo mencione."""
+    if _cache.get("nombres"):
+        return _cache["nombres"]
+    nombres = {}
+    for path in sorted(_diario_paths(), reverse=True):
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+        for r in bvc_parse.parse_diario(raw)["regulares"]:
+            if r["simbolo"] not in nombres and r.get("nombre"):
+                nombres[r["simbolo"]] = r["nombre"]
+    _cache["nombres"] = nombres
+    return nombres
+
+
 def _read_diario(fecha):
     path = DIARIOS_DIR / f"{fecha}.json"
     if not path.exists():
@@ -70,6 +87,101 @@ def _read_diario(fecha):
 
 def _diario_paths():
     return sorted(DIARIOS_DIR.glob("*.json"))
+
+
+SIMBOLOS_INFO_JSON = DATA_DIR / "simbolos_info.json"
+SIMBOLOS_INFO_TTL = 3600 * 24  # 24 horas
+SECTORES_JSON = DATA_DIR / "sectores.json"
+
+
+def _read_sectores():
+    """Mapa manual simbolo -> sector desde data/sectores.json."""
+    if not SECTORES_JSON.exists():
+        return {}
+    stamp = SECTORES_JSON.stat().st_mtime
+    if _cache.get("sectores_stamp") == stamp:
+        return _cache["sectores"]
+    with open(SECTORES_JSON, encoding="utf-8") as fh:
+        raw = json.load(fh)
+    inv = {}
+    for sector, sims in raw.items():
+        for s in sims:
+            inv[s] = sector
+    _cache["sectores"] = inv
+    _cache["sectores_stamp"] = stamp
+    return inv
+
+
+def _read_simbolos_info():
+    if not SIMBOLOS_INFO_JSON.exists():
+        return {}
+    stamp = SIMBOLOS_INFO_JSON.stat().st_mtime
+    if _cache.get("simbolos_info_stamp") == stamp:
+        return _cache["simbolos_info"]
+    with open(SIMBOLOS_INFO_JSON, encoding="utf-8") as fh:
+        data = json.load(fh)
+    _cache["simbolos_info"] = data
+    _cache["simbolos_info_stamp"] = stamp
+    return data
+
+
+def _simbolo_info(simbolo, force=False):
+    """Info de un simbolo con cache en disco (TTL). Descarga desde la BVC si hace falta."""
+    cache = _read_simbolos_info()
+    now = time.time()
+    entry = cache.get(simbolo)
+    if not force and entry and (now - entry.get("ts", 0)) < SIMBOLOS_INFO_TTL:
+        return entry.get("data")
+    try:
+        info = bvc_api.get_simbolo_detalle(simbolo)
+    except Exception:
+        if entry:
+            return entry.get("data")
+        return None
+    cache[simbolo] = {"ts": now, "data": info}
+    try:
+        with open(SIMBOLOS_INFO_JSON, "w", encoding="utf-8") as fh:
+            json.dump(cache, fh, ensure_ascii=False)
+        _cache["simbolos_info"] = cache
+        _cache["simbolos_info_stamp"] = SIMBOLOS_INFO_JSON.stat().st_mtime
+    except OSError:
+        pass
+    return info
+
+
+def _capitalizacion():
+    """Capitalizacion bursatil por simbolo (Bs y USD) + cotizacion del ultimo dia.
+    Combina la info de la BVC (getSimbolosDetalle, cache 24h) con la ultima fila de prices.csv."""
+    sectores = _read_sectores()
+    last, _ = _prices_flat()
+    nombres = _simbolo_nombres()
+    out = []
+    for sim in sorted(last):
+        fila = last[sim]
+        info = _simbolo_info(sim) or {}
+        cap_bs = _fnum(info.get("capitali_bs"))
+        cap_us = _fnum(info.get("capitali_us"))
+        if cap_bs is None and cap_us is None:
+            continue
+        var_rel = _fnum(info.get("var_rel"))
+        if var_rel is None:
+            var_rel = _fnum(fila.get("var_rel"))
+        precio = _fnum(info.get("precio"))
+        if precio is None:
+            precio = _fnum(fila.get("precio_bs"))
+        out.append(
+            {
+                "simbolo": sim,
+                "nombre": nombres.get(sim, info.get("descripcion") or sim),
+                "sector": sectores.get(sim, "Otros"),
+                "capitali_bs": cap_bs,
+                "capitali_us": cap_us,
+                "precio": precio,
+                "var_rel": var_rel,
+                "fecha": fila.get("fecha"),
+            }
+        )
+    return out
 
 
 def _noticias():
@@ -129,9 +241,10 @@ def _enrich_op(op, by_sym, last):
     return res
 
 
-def _valoracion():
+def _valoracion(pf=None):
     last, by_sym = _prices_flat()
-    pf = _read_portafolio()
+    if pf is None:
+        pf = _read_portafolio()
     compras = pf.get("compras", [])
     ventas = pf.get("ventas", [])
     tickers = sorted(set([c["ticker"] for c in compras] + [v["ticker"] for v in ventas]))
@@ -169,6 +282,26 @@ def _valoracion():
         if cant_comprada and costo_usd:
             costo_prom_usd = costo_usd / cant_comprada
             costo_usd_tenido = costo_prom_usd * cantidad
+        ganancia_realizada_bs = 0.0
+        ganancia_realizada_usd = 0.0
+        if ventas_sym and cant_comprada:
+            costo_prom_bs_v = costo_bs / cant_comprada
+            costo_prom_usd_v = (costo_usd / cant_comprada) if costo_usd else 0.0
+            for v in ventas_sym:
+                q = float(v.get("cantidad", 0) or 0)
+                p = _fnum(v.get("precio_bs"))
+                com = _fnum(v.get("comision_bs")) or 0
+                if p is None:
+                    continue
+                ing_bs = q * p - com
+                ganancia_realizada_bs += ing_bs - q * costo_prom_bs_v
+                fila_v = by_sym.get(sim, {}).get(str(v.get("fecha", ""))) or ult
+                tasa_v = _fnum(fila_v.get("tasa_bcv")) if fila_v else None
+                if tasa_v and tasa_v > 0:
+                    ganancia_realizada_usd += ing_bs / tasa_v - q * costo_prom_usd_v
+                else:
+                    precio_usd_v = _fnum(fila_v.get("precio_usd")) if fila_v else None
+                    ganancia_realizada_usd += q * (precio_usd_v or 0) - q * costo_prom_usd_v
         valor_bs = cantidad * precio_bs if (cantidad and precio_bs is not None) else None
         valor_usd = cantidad * precio_usd if (cantidad and precio_usd is not None) else None
         ganancia_bs = (valor_bs - costo_bs_tenido) if (valor_bs is not None and cantidad) else None
@@ -194,16 +327,21 @@ def _valoracion():
                 "ganancia_bs": round(ganancia_bs, 2) if ganancia_bs is not None else None,
                 "ganancia_usd": round(ganancia_usd, 4) if ganancia_usd is not None else None,
                 "ganancia_pct": round(ganancia_pct, 2) if ganancia_pct is not None else None,
+                "realizada_bs": round(ganancia_realizada_bs, 2),
+                "realizada_usd": round(ganancia_realizada_usd, 4),
                 "n_compras": len(compras_sym),
                 "n_ventas": len(ventas_sym),
             }
         )
     totales = {
         "costo_bs": round(sum(f["costo_total_bs"] for f in filas), 2),
+        "costo_usd": round(sum(f["costo_total_usd"] for f in filas if f["costo_total_usd"]), 4),
         "valor_bs": round(sum(f["valor_bs"] for f in filas if f["valor_bs"]), 2),
         "valor_usd": round(sum(f["valor_usd"] for f in filas if f["valor_usd"]), 4),
         "ganancia_bs": round(sum(f["ganancia_bs"] for f in filas if f["ganancia_bs"]), 2),
         "ganancia_usd": round(sum(f["ganancia_usd"] for f in filas if f["ganancia_usd"]), 4),
+        "realizada_bs": round(sum(f["realizada_bs"] for f in filas), 2),
+        "realizada_usd": round(sum(f["realizada_usd"] for f in filas), 4),
     }
     return {
         "filas": filas,
@@ -213,8 +351,9 @@ def _valoracion():
     }
 
 
-def _evolucion():
-    pf = _read_portafolio()
+def _evolucion(pf=None):
+    if pf is None:
+        pf = _read_portafolio()
     compras = pf.get("compras", [])
     ventas = pf.get("ventas", [])
     if not compras and not ventas:
@@ -353,6 +492,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"error": "simbolo no encontrado"}, 404)
             else:
                 self._send_json({"simbolo": simbolo, "serie": rows})
+        elif path == "/api/simbolo_detalle":
+            simbolo = query.get("simbolo", [""])[0].upper()
+            force = query.get("force", [""])[0] == "1"
+            info = _simbolo_info(simbolo, force=force)
+            if info is None:
+                self._send_json({"error": "sin datos"}, 404)
+            else:
+                self._send_json(info)
+        elif path == "/api/capitalizacion":
+            self._send_json({"simbolos": _capitalizacion()})
         elif path == "/api/noticias":
             self._send_json({"noticias": _noticias()})
         elif path == "/api/portafolio":
